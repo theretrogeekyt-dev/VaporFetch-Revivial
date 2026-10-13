@@ -120,11 +120,46 @@
                 <line x1="21" y1="21" x2="16.65" y2="16.65"/>
               </svg>
               <input type="text" id="librarySearchInput" class="steam-search-input" placeholder="Search by title or AppID...">
+              <button id="librarySearchClearBtn" class="search-clear-btn" style="display: none;" onclick="clearLibrarySearch()">&times;</button>
             </div>
-            <div class="filter-pills-row">
-              <button class="filter-pill active" onclick="setLibraryFilter('all', this)">All</button>
-              <button class="filter-pill" onclick="setLibraryFilter('installed', this)">Installed on NAS</button>
-              <button class="filter-pill" onclick="setLibraryFilter('favorites', this)">Favorites</button>
+
+            <div class="sidebar-toolbar-row">
+              <div class="filter-pills-row">
+                <button class="filter-pill active" onclick="setLibraryFilter('all', this)">All</button>
+                <button class="filter-pill" onclick="setLibraryFilter('installed', this)">Installed</button>
+                <button class="filter-pill" onclick="setLibraryFilter('favorites', this)">Favorites</button>
+              </div>
+
+              <div class="view-mode-group">
+                <button class="view-mode-btn active" data-mode="hero" onclick="setLibraryViewMode('hero')" title="Details / Hero View">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                    <rect x="3" y="3" width="7" height="18" rx="1"/>
+                    <rect x="12" y="3" width="9" height="8" rx="1"/>
+                    <rect x="12" y="13" width="9" height="8" rx="1"/>
+                  </svg>
+                </button>
+                <button class="view-mode-btn" data-mode="grid" onclick="setLibraryViewMode('grid')" title="Grid Showcase View">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                    <rect x="3" y="3" width="8" height="8" rx="1"/>
+                    <rect x="13" y="3" width="8" height="8" rx="1"/>
+                    <rect x="3" y="13" width="8" height="8" rx="1"/>
+                    <rect x="13" y="13" width="8" height="8" rx="1"/>
+                  </svg>
+                </button>
+                <button class="view-mode-btn" data-mode="list" onclick="setLibraryViewMode('list')" title="List View">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                    <line x1="4" y1="6" x2="20" y2="6" stroke="currentColor" stroke-width="2"/>
+                    <line x1="4" y1="12" x2="20" y2="12" stroke="currentColor" stroke-width="2"/>
+                    <line x1="4" y1="18" x2="20" y2="18" stroke="currentColor" stroke-width="2"/>
+                  </svg>
+                </button>
+                <button class="view-mode-btn" id="batchModeToggleBtn" onclick="toggleBatchMode()" title="Toggle Multi-Select Batch Mode">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 11 12 14 22 4"/>
+                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -133,6 +168,27 @@
 
         <!-- Right Main Pane (Game Detail Hero View) -->
         <section id="libraryMainPane" class="library-main-pane"></section>
+      </div>
+
+      <!-- Floating Batch Action Dock -->
+      <div id="batchActionBar" class="sticky-batch-bar" style="display: none;">
+        <div class="batch-count-group">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--steam-blue-light)" stroke-width="2.5">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <span id="batchSelectedCountText" class="batch-count-text">0 games selected</span>
+        </div>
+        <div class="batch-controls-group">
+          <label class="batch-goldberg-toggle" title="Auto-apply Goldberg Emulator after download">
+            <input type="checkbox" id="batchRequireGoldbergCheck" checked>
+            <span>Auto-Apply Goldberg DRM-Free</span>
+          </label>
+          <button class="btn-steam-action" onclick="selectAllBatch()">Select All</button>
+          <button class="btn-steam-action" onclick="deselectAllBatch()">Clear</button>
+          <button class="btn-steam-green" style="padding: 8px 22px; font-size: 13px;" onclick="queueBatchSelectedGames()">
+            Download to NAS
+          </button>
+        </div>
       </div>
     </section>
 
@@ -362,6 +418,112 @@
           </div>
         </form>
       </div>
+    </div>
+  </div>
+
+  <!-- ==================== GAME PROPERTIES DIALOG ==================== -->
+  <div id="gamePropertiesModal" class="modal-backdrop" style="display: none;" onclick="if(event.target===this) closeGamePropertiesModal()">
+    <div class="valve-modal-dialog" style="max-width: 580px;">
+      <div class="modal-dialog-header">
+        <span id="propGameTitle" class="dialog-title">Game Properties</span>
+        <button class="modal-close-btn" onclick="closeGamePropertiesModal()">&times;</button>
+      </div>
+
+      <div class="settings-dialog-layout">
+        <aside class="settings-sidebar">
+          <button class="settings-tab-btn active" onclick="switchPropSubtab('general', this)">General</button>
+          <button class="settings-tab-btn" onclick="switchPropSubtab('files', this)">Installed Files</button>
+          <button class="settings-tab-btn" onclick="switchPropSubtab('goldberg', this)">DRM-Free Emulator</button>
+        </aside>
+
+        <div class="settings-body-pane">
+          <!-- Subtab 1: General -->
+          <div id="propPaneGeneral" class="prop-tab-pane">
+            <div class="form-group">
+              <label class="form-label">Steam Application ID</label>
+              <div id="propAppIdDisplay" class="prop-readonly-box">--</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Depot Storage Target</label>
+              <div class="prop-readonly-box">/downloads/steamapps/common/</div>
+              <span class="form-helper">Games are downloaded with directory flattening so game files reside cleanly in root.</span>
+            </div>
+          </div>
+
+          <!-- Subtab 2: Installed Files -->
+          <div id="propPaneFiles" class="prop-tab-pane" style="display: none;">
+            <div class="form-group">
+              <label class="form-label">NAS Storage Location</label>
+              <div id="propFilePathDisplay" class="prop-readonly-box">Scanning NAS directory...</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Size on NAS Disk</label>
+              <div id="propFileSizeDisplay" class="prop-readonly-box">-- GB</div>
+            </div>
+            <div class="form-group" style="margin-top: 18px;">
+              <button type="button" class="btn-steam-danger" onclick="deleteGameFromNasByAppId(state.gamePropertiesTargetAppId)">
+                Delete Game Files from NAS
+              </button>
+            </div>
+          </div>
+
+          <!-- Subtab 3: Goldberg Emulator -->
+          <div id="propPaneGoldberg" class="prop-tab-pane" style="display: none;">
+            <div class="form-group">
+              <label class="form-label">Goldberg DRM-Free Status</label>
+              <div id="propGoldbergStatusDisplay" class="prop-readonly-box">Original Steam DRM</div>
+              <span class="form-helper">Replaces steam_api.dll / steam_api64.dll with Goldberg Emulator so games run standalone offline.</span>
+            </div>
+            <div class="form-group" style="margin-top: 18px;">
+              <button type="button" class="btn-steam-action" onclick="toggleGoldbergForGame(state.gamePropertiesTargetAppId)">
+                Toggle Goldberg Offline Wrapper
+              </button>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; margin-top: 24px;">
+            <button type="button" class="btn-steam-green" style="padding: 8px 24px; font-size: 13px;" onclick="closeGamePropertiesModal()">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== STEAM DECK / BIG PICTURE OVERLAY ==================== -->
+  <div id="deckOverlay" class="deck-fullscreen-overlay" style="display: none;">
+    <div class="deck-top-bar">
+      <div class="deck-top-left">
+        <svg class="valve-icon" viewBox="0 0 24 24" width="22" height="22" style="color: var(--steam-blue-light);">
+          <path d="M12 2C6.48 2 2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15.2l-2.4-1.2v-.03c-.34-.17-.6-.46-.73-.83L2.24 11.2C2.08 11.46 2 11.72 2 12c0 5.52 4.48 10 10 10s10-4.48 10-10S17.52 2 12 2zm3.3 14.1c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="currentColor"/>
+        </svg>
+        <span class="deck-system-title">STEAM DECK</span>
+        <span id="deckClock" class="deck-clock">12:00 PM</span>
+      </div>
+      <div class="deck-top-right">
+        <div class="deck-nas-badge">
+          <span class="deck-status-led">●</span>
+          <span id="deckStorageStatus">NAS: Connected</span>
+        </div>
+        <button class="btn-deck-exit" onclick="toggleBigPictureMode()" title="Exit Big Picture (ESC)">
+          <span>Exit Big Picture</span>
+          <kbd>ESC</kbd>
+        </button>
+      </div>
+    </div>
+
+    <div class="deck-main-scroll">
+      <div class="deck-shelf-header">
+        <h2 class="deck-shelf-title">RECENT GAMES</h2>
+        <span class="deck-shelf-sub">Ready to play &amp; stream</span>
+      </div>
+      <div id="deckHomeCarousel" class="deck-home-carousel"></div>
+    </div>
+
+    <div class="deck-controller-guide">
+      <div class="guide-pill"><span class="controller-button-badge">A</span> Select</div>
+      <div class="guide-pill"><span class="controller-button-badge">B</span> Back</div>
+      <div class="guide-pill"><span class="controller-button-badge">X</span> Queue Download</div>
+      <div class="guide-pill"><span class="controller-button-badge">Y</span> Search</div>
     </div>
   </div>
 

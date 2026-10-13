@@ -1,6 +1,6 @@
 /**
- * VaporFetch - Valve Steam Client Application Controller
- * Provides authentic Steam desktop & Steam Deck Big Picture UI logic.
+ * VaporFetch Revival - Valve Steam Client Application Controller
+ * Complete implementation of Valve Desktop Client & Steam Deck Panorama UI.
  */
 
 // Application State
@@ -16,6 +16,7 @@ const state = {
   queue: { items: [], active_id: null },
   activeDownloadItem: null,
   userSession: null,
+  batchMode: false,
   batchSelectedAppIds: new Set(),
   favorites: new Set(JSON.parse(localStorage.getItem("vf_favorites") || "[]")),
   speedHistory: [], // [{ net: bps, disk: bps }]
@@ -23,6 +24,9 @@ const state = {
   qrSession: null,
   qrTimer: null,
   sseSource: null,
+  currentHeroSubTab: "overview",
+  currentNews: [],
+  gamePropertiesTargetAppId: null,
 };
 
 // ==========================================================================
@@ -39,19 +43,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   await refreshStorageInfo();
   await loadInstalledGames();
 
-  // If authenticated, load library
   if (state.userSession && state.userSession.authenticated) {
     await loadGamesLibrary();
   } else {
     showLoginPrompt();
   }
 
-  // Check for container updates
   checkUpdates(false);
 });
 
 // ==========================================================================
-// NAVIGATION & VIEWS
+// NAVIGATION TABS & VIEW SWITCHING
 // ==========================================================================
 
 function setupNavigationTabs() {
@@ -65,6 +67,8 @@ function setupNavigationTabs() {
 
 function switchTab(tabName) {
   state.activeTab = tabName;
+  valveSound.playSelect();
+
   document.querySelectorAll(".nav-tab").forEach((t) => {
     t.classList.toggle("active", t.dataset.tab === tabName);
   });
@@ -74,22 +78,51 @@ function switchTab(tabName) {
 
   if (tabName === "downloads") {
     renderDownloadsView();
+    setTimeout(() => {
+      const canvas = document.getElementById("speedCanvas");
+      if (canvas && canvas.parentElement) {
+        canvas.width = canvas.parentElement.clientWidth * window.devicePixelRatio;
+        canvas.height = canvas.parentElement.clientHeight * window.devicePixelRatio;
+        drawSpeedGraph();
+      }
+    }, 50);
   } else if (tabName === "storage") {
     refreshStorageInfo();
     loadInstalledGames();
+  } else if (tabName === "community") {
+    loadCommunityFeed();
   }
 }
 
 function toggleBigPictureMode() {
   state.bigPictureMode = !state.bigPictureMode;
   document.body.classList.toggle("mode-bigpicture", state.bigPictureMode);
+  const deckOverlay = document.getElementById("deckOverlay");
+
   if (state.bigPictureMode) {
     valveSound.playSelect();
+    if (deckOverlay) deckOverlay.style.display = "flex";
+    updateDeckClock();
     renderBigPictureCarousel();
   } else {
     valveSound.playBack();
+    if (deckOverlay) deckOverlay.style.display = "none";
   }
 }
+
+function updateDeckClock() {
+  const clockEl = document.getElementById("deckClock");
+  if (clockEl) {
+    const now = new Date();
+    clockEl.textContent = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  const deckStorage = document.getElementById("deckStorageStatus");
+  if (deckStorage && state.storageInfo) {
+    const freeGb = (state.storageInfo.free_bytes / (1024 ** 3)).toFixed(1);
+    deckStorage.textContent = `NAS: ${freeGb} GB Free`;
+  }
+}
+
 
 // ==========================================================================
 // USER AUTHENTICATION & STEAM GUARD QR
@@ -158,7 +191,7 @@ async function startQrAuthSession() {
     if (state.qrTimer) clearInterval(state.qrTimer);
     state.qrTimer = setInterval(pollQrSession, (data.interval || 3) * 1000);
   } catch (e) {
-    if (statusText) statusText.textContent = "Failed to start QR session. Check internet.";
+    if (statusText) statusText.textContent = "Failed to start QR session. Check internet connection.";
   }
 }
 
@@ -206,9 +239,7 @@ function showLoginPrompt() {
   mainPane.innerHTML = `
     <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px; text-align: center;">
       <svg class="valve-icon" style="width: 72px; height: 72px; margin-bottom: 20px; color: var(--steam-blue-light);" viewBox="0 0 24 24">
-        <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/>
-        <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" fill="none" stroke="currentColor" stroke-width="2"/>
-        <path d="M2 12h20" fill="none" stroke="currentColor" stroke-width="2"/>
+        <path d="M12 2C6.48 2 2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15.2l-2.4-1.2v-.03c-.34-.17-.6-.46-.73-.83L2.24 11.2C2.08 11.46 2 11.72 2 12c0 5.52 4.48 10 10 10s10-4.48 10-10S17.52 2 12 2zm3.3 14.1c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="currentColor"/>
       </svg>
       <h2 style="font-size: 26px; font-weight: 800; color: #fff; margin-bottom: 12px;">Steam Sign-in Required</h2>
       <p style="color: var(--steam-text-secondary); max-width: 480px; margin-bottom: 28px; line-height: 1.6;">
@@ -239,13 +270,22 @@ async function loadGamesLibrary() {
     state.games = data.games || [];
     applyLibraryFilters();
 
-    // Select first game by default
     if (state.filteredGames.length > 0 && !state.selectedGame) {
       selectGame(state.filteredGames[0].appid);
     }
   } catch (e) {
     console.error("Library fetch error:", e);
   }
+}
+
+function setLibraryFilter(filter, buttonEl) {
+  state.libraryFilter = filter;
+  valveSound.playSelect();
+
+  document.querySelectorAll(".filter-pill").forEach((btn) => btn.classList.remove("active"));
+  if (buttonEl) buttonEl.classList.add("active");
+
+  applyLibraryFilters();
 }
 
 function applyLibraryFilters() {
@@ -265,8 +305,34 @@ function applyLibraryFilters() {
   });
 
   renderSidebarGames();
+
   if (state.libraryViewMode === "grid") {
     renderGridView();
+  } else if (state.libraryViewMode === "list") {
+    renderListView();
+  } else if (state.selectedGame) {
+    renderHeroGameView(state.selectedGame);
+  }
+}
+
+function setLibraryViewMode(mode) {
+  state.libraryViewMode = mode;
+  valveSound.playSelect();
+
+  document.querySelectorAll(".view-mode-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.mode === mode);
+  });
+
+  if (mode === "grid") {
+    renderGridView();
+  } else if (mode === "list") {
+    renderListView();
+  } else {
+    if (state.selectedGame) {
+      renderHeroGameView(state.selectedGame);
+    } else if (state.filteredGames.length > 0) {
+      selectGame(state.filteredGames[0].appid);
+    }
   }
 }
 
@@ -284,7 +350,7 @@ function renderSidebarGames() {
 
   let html = `<div class="collection-group">
     <div class="collection-header">
-      <span>All Games</span>
+      <span>${state.libraryFilter === "favorites" ? "Favorites" : state.libraryFilter === "installed" ? "Installed on NAS" : "All Games"}</span>
       <span class="collection-count">${state.filteredGames.length}</span>
     </div>`;
 
@@ -292,6 +358,7 @@ function renderSidebarGames() {
     const isSelected = state.selectedGame && state.selectedGame.appid === game.appid;
     const isInstalled = installedAppIds.has(game.appid);
     const isDownloading = activeAppId === game.appid;
+    const isChecked = state.batchSelectedAppIds.has(game.appid);
 
     let statusIcon = "";
     if (isDownloading) {
@@ -302,8 +369,13 @@ function renderSidebarGames() {
 
     const fallbackIcon = "data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 fill=%22%232a475e%22/><text x=%2250%22 y=%2260%22 font-size=%2250%22 text-anchor=%22middle%22 fill=%22white%22>🎮</text></svg>";
 
+    const checkboxHtml = state.batchMode ? `
+      <input type="checkbox" class="sidebar-batch-checkbox" ${isChecked ? "checked" : ""} onclick="event.stopPropagation(); toggleBatchSelect(${game.appid});">
+    ` : "";
+
     html += `
       <div class="game-list-item ${isSelected ? "selected" : ""}" onclick="selectGame(${game.appid})" oncontextmenu="openContextMenu(event, ${game.appid})">
+        ${checkboxHtml}
         <img class="item-icon" src="${game.icon_url || fallbackIcon}" onerror="this.src='${fallbackIcon}'">
         <span class="item-title">${escapeHtml(game.name)}</span>
         ${statusIcon}
@@ -331,7 +403,7 @@ async function renderHeroGameView(game) {
   if (!mainPane) return;
 
   const isInstalled = state.installedGames.some((ig) => ig.appid === game.appid);
-  const isQueued = state.queue.items.some((qi) => qi.appid === game.appid && qi.status in { queued: 1, running: 1 });
+  const isQueued = state.queue.items.some((qi) => qi.appid === game.appid && (qi.status === "queued" || qi.status === "running"));
   const isDownloading = state.activeDownloadItem && state.activeDownloadItem.appid === game.appid;
 
   let btnLabel = "Install";
@@ -382,16 +454,19 @@ async function renderHeroGameView(game) {
               Goldberg Wrapper
             </button>
             <button class="btn-steam-action" onclick="openGamePropertiesModal(${game.appid})" title="Game Properties">
-              ⚙️
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle;">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
             </button>
           </div>
         </div>
       </div>
 
       <div class="hero-tabs-header">
-        <button class="hero-sub-tab active" onclick="switchHeroSubTab('overview')">Overview</button>
-        <button class="hero-sub-tab" onclick="switchHeroSubTab('news')">News & Updates</button>
-        <button class="hero-sub-tab" onclick="switchHeroSubTab('files')">Files & NAS</button>
+        <button class="hero-sub-tab ${state.currentHeroSubTab === "overview" ? "active" : ""}" onclick="switchHeroSubTab('overview')">Overview</button>
+        <button class="hero-sub-tab ${state.currentHeroSubTab === "news" ? "active" : ""}" onclick="switchHeroSubTab('news')">News & Updates</button>
+        <button class="hero-sub-tab ${state.currentHeroSubTab === "files" ? "active" : ""}" onclick="switchHeroSubTab('files')">Files on NAS</button>
       </div>
 
       <div class="hero-tab-content">
@@ -404,7 +479,7 @@ async function renderHeroGameView(game) {
 
         <div class="hero-sidebar-column">
           <div class="steam-panel-box">
-            <div class="panel-title">Developer & Genres</div>
+            <div class="panel-title">Metadata</div>
             <div id="heroMetaBox" style="font-size: 12px; color: var(--steam-text-secondary); display: flex; flex-direction: column; gap: 8px;">
               <div><strong>AppID:</strong> ${game.appid}</div>
             </div>
@@ -414,107 +489,536 @@ async function renderHeroGameView(game) {
     </div>
   `;
 
-  // Fetch live store details & news asynchronously
   fetchGameStoreDetails(game.appid);
   fetchGameNews(game.appid);
   checkGoldbergStatusForHero(game.appid);
 }
 
-async function fetchGameStoreDetails(appid) {
-  try {
-    const res = await fetch(`/api/games/${appid}/details`);
-    if (!res.ok) return;
-    const data = await res.json();
+function switchHeroSubTab(tabName) {
+  state.currentHeroSubTab = tabName;
+  valveSound.playSelect();
 
-    const descEl = document.getElementById("heroDescription");
-    if (descEl && data.short_description) {
-      descEl.textContent = data.short_description;
+  document.querySelectorAll(".hero-sub-tab").forEach((btn) => {
+    btn.classList.toggle("active", btn.textContent.toLowerCase().includes(tabName));
+  });
+
+  const mainCol = document.getElementById("heroMainContent");
+  if (!mainCol || !state.selectedGame) return;
+
+  if (tabName === "news") {
+    if (state.currentNews.length === 0) {
+      mainCol.innerHTML = `
+        <div class="steam-panel-box">
+          <div class="panel-title">Developer News & Updates</div>
+          <p style="color: var(--steam-text-secondary); font-size: 13px;">No news items available for this title.</p>
+        </div>
+      `;
+    } else {
+      let newsHtml = `
+        <div class="steam-panel-box">
+          <div class="panel-title">Recent Patch Notes & Announcements</div>
+      `;
+      state.currentNews.forEach((item) => {
+        const dateStr = item.date ? new Date(item.date * 1000).toLocaleDateString() : "--";
+        newsHtml += `
+          <div class="news-card">
+            <a href="${item.url || '#'}" target="_blank" class="news-title">${escapeHtml(item.title)}</a>
+            <div class="news-meta">Posted by ${escapeHtml(item.author)} on ${dateStr}</div>
+            <div class="news-body">${escapeHtml(item.contents)}</div>
+          </div>
+        `;
+      });
+      newsHtml += `</div>`;
+      mainCol.innerHTML = newsHtml;
     }
-
-    const metaBox = document.getElementById("heroMetaBox");
-    if (metaBox) {
-      metaBox.innerHTML = `
-        <div><strong>AppID:</strong> ${appid}</div>
-        <div><strong>Release Date:</strong> ${data.release_date || "--"}</div>
-        <div><strong>Developers:</strong> ${(data.developers || []).join(", ") || "--"}</div>
-        <div><strong>Publishers:</strong> ${(data.publishers || []).join(", ") || "--"}</div>
-        <div><strong>Genres:</strong> ${(data.genres || []).join(", ") || "--"}</div>
+  } else if (tabName === "files") {
+    const installed = state.installedGames.find((ig) => ig.appid === state.selectedGame.appid);
+    if (installed) {
+      const sizeGb = (installed.size_bytes / (1024 ** 3)).toFixed(2);
+      mainCol.innerHTML = `
+        <div class="steam-panel-box">
+          <div class="panel-title">Installed Files on NAS</div>
+          <div style="font-size: 13px; color: var(--steam-text-main); display: flex; flex-direction: column; gap: 12px;">
+            <div><strong>Location:</strong> <code>${escapeHtml(installed.path)}</code></div>
+            <div><strong>Size on Disk:</strong> ${sizeGb} GB</div>
+            <div><strong>ACF Manifest:</strong> ${installed.has_manifest ? "Present (Build ID: " + installed.buildid + ")" : "Not detected"}</div>
+            <div><strong>Goldberg Emulator:</strong> ${installed.goldberg_patched ? "Applied (DRM-Free)" : "Original Steam DRM"}</div>
+            <div style="margin-top: 16px;">
+              <button class="menu-button" style="color: var(--steam-red); border: 1px solid var(--steam-red); padding: 8px 16px;" onclick="deleteGameFromNas('${escapeHtml(installed.folder_name)}')">
+                Delete Game from NAS
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    } else {
+      mainCol.innerHTML = `
+        <div class="steam-panel-box">
+          <div class="panel-title">Files on NAS</div>
+          <p style="color: var(--steam-text-secondary); font-size: 13px;">This game is not currently downloaded to your NAS share (/downloads).</p>
+        </div>
       `;
     }
-  } catch (e) {}
-}
-
-async function fetchGameNews(appid) {
-  try {
-    const res = await fetch(`/api/games/${appid}/news`);
-    if (!res.ok) return;
-    const data = await res.json();
-    state.currentNews = data.news || [];
-  } catch (e) {}
-}
-
-async function checkGoldbergStatusForHero(appid) {
-  try {
-    const res = await fetch(`/api/games/${appid}/goldberg`);
-    if (!res.ok) return;
-    const data = await res.json();
-    const btn = document.getElementById("btnGoldbergHero");
-    if (btn) {
-      if (data.patched) {
-        btn.classList.add("goldberg-active");
-        btn.textContent = "DRM-Free (Goldberg Active)";
-      } else {
-        btn.classList.remove("goldberg-active");
-        btn.textContent = "Apply Goldberg DRM";
-      }
-    }
-  } catch (e) {}
-}
-
-async function toggleGoldbergForGame(appid) {
-  valveSound.playSelect();
-  try {
-    const checkRes = await fetch(`/api/games/${appid}/goldberg`);
-    if (!checkRes.ok) {
-      showToast("Download the game to your NAS before applying Goldberg wrapper.", "warning");
-      return;
-    }
-    const stat = await checkRes.json();
-    if (stat.patched) {
-      const revRes = await fetch(`/api/games/${appid}/goldberg/revert`, { method: "POST" });
-      if (revRes.ok) {
-        showToast("Reverted Goldberg wrapper back to authentic Steam DLLs.", "info");
-        checkGoldbergStatusForHero(appid);
-      }
-    } else {
-      const appRes = await fetch(`/api/games/${appid}/goldberg/apply`, { method: "POST" });
-      if (appRes.ok) {
-        showToast("Goldberg offline wrapper applied! Game is now DRM-free.", "success");
-        checkGoldbergStatusForHero(appid);
-      }
-    }
-  } catch (e) {
-    showToast("Error updating Goldberg emulator.", "error");
+  } else {
+    // Overview
+    renderHeroGameView(state.selectedGame);
   }
 }
 
-async function handleHeroInstallClick(appid) {
+function renderGridView() {
+  const mainPane = document.getElementById("libraryMainPane");
+  if (!mainPane) return;
+
+  let html = `<div class="library-grid-view">`;
+  state.filteredGames.forEach((game) => {
+    const isChecked = state.batchSelectedAppIds.has(game.appid);
+    const playtimeHrs = (game.playtime_forever / 60).toFixed(1);
+    html += `
+      <div class="game-capsule-card" onclick="selectGame(${game.appid}); setLibraryViewMode('hero');">
+        <input type="checkbox" class="capsule-checkbox" ${isChecked ? "checked" : ""} onclick="event.stopPropagation(); toggleBatchSelect(${game.appid});">
+        <img class="capsule-artwork" src="${game.capsule_url || game.header_url}" loading="lazy">
+        <div class="capsule-overlay">
+          <div class="capsule-title">${escapeHtml(game.name)}</div>
+          <div class="capsule-subtext">${playtimeHrs} hrs played</div>
+        </div>
+      </div>
+    `;
+  });
+  html += `</div>`;
+  mainPane.innerHTML = html;
+}
+
+function renderListView() {
+  const mainPane = document.getElementById("libraryMainPane");
+  if (!mainPane) return;
+
+  const installedAppIds = new Set(state.installedGames.map((ig) => ig.appid));
+  let html = `
+    <div style="padding: 24px 32px;">
+      <div class="queue-table-container">
+        <div class="queue-section-header">
+          <span>Steam Games List (${state.filteredGames.length})</span>
+        </div>
+  `;
+
+  state.filteredGames.forEach((game) => {
+    const isInstalled = installedAppIds.has(game.appid);
+    const playtimeHrs = (game.playtime_forever / 60).toFixed(1);
+    html += `
+      <div class="queue-row" onclick="selectGame(${game.appid}); setLibraryViewMode('hero');" style="cursor: pointer;">
+        <div class="queue-col-title">
+          <img src="${game.icon_url}" style="width: 20px; height: 20px; border-radius: 2px;">
+          <span>${escapeHtml(game.name)}</span>
+        </div>
+        <div class="queue-col-status">${playtimeHrs} hrs played</div>
+        <div class="queue-col-status" style="color: ${isInstalled ? "var(--steam-in-game-green)" : "var(--steam-text-dim)"}">
+          ${isInstalled ? "Installed on NAS" : "Uninstalled"}
+        </div>
+      </div>
+    `;
+  });
+  html += `</div></div>`;
+  mainPane.innerHTML = html;
+}
+
+// Batch Select Controls
+function toggleBatchMode() {
+  state.batchMode = !state.batchMode;
+  renderSidebarGames();
+  updateBatchBarUI();
+}
+
+function toggleBatchSelect(appid) {
+  if (state.batchSelectedAppIds.has(appid)) {
+    state.batchSelectedAppIds.delete(appid);
+  } else {
+    state.batchSelectedAppIds.add(appid);
+  }
+  valveSound.playHover();
+  renderSidebarGames();
+  updateBatchBarUI();
+}
+
+function selectAllBatch() {
+  state.filteredGames.forEach((g) => state.batchSelectedAppIds.add(g.appid));
+  renderSidebarGames();
+  updateBatchBarUI();
+}
+
+function deselectAllBatch() {
+  state.batchSelectedAppIds.clear();
+  renderSidebarGames();
+  updateBatchBarUI();
+}
+
+function updateBatchBarUI() {
+  let bar = document.getElementById("batchActionBar");
+  if (!bar) return;
+
+  if (state.batchSelectedAppIds.size > 0) {
+    bar.style.display = "flex";
+    const countEl = document.getElementById("batchSelectedCountText");
+    if (countEl) countEl.textContent = `${state.batchSelectedAppIds.size} games selected`;
+  } else {
+    bar.style.display = "none";
+  }
+}
+
+async function queueBatchSelectedGames() {
+  if (state.batchSelectedAppIds.size === 0) return;
+  valveSound.playSelect();
+
+  const gamesToQueue = state.games
+    .filter((g) => state.batchSelectedAppIds.has(g.appid))
+    .map((g) => ({ appid: g.appid, name: g.name }));
+
+  const requireGoldberg = document.getElementById("batchRequireGoldbergCheck")?.checked || false;
+
+  try {
+    const res = await fetch("/api/queue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ games: gamesToQueue, require_goldberg: requireGoldberg }),
+    });
+    if (res.ok) {
+      showToast(`Added ${gamesToQueue.length} games to download queue!`, "success");
+      deselectAllBatch();
+      switchTab("downloads");
+    }
+  } catch (e) {
+    showToast("Error adding batch to queue.", "error");
+  }
+}
+
+// Context Menu (Right Click on Game)
+function openContextMenu(e, appid) {
+  e.preventDefault();
+  closeContextMenu();
+
   const game = state.games.find((g) => g.appid === appid);
   if (!game) return;
 
+  const isFavorite = state.favorites.has(appid);
+  const isInstalled = state.installedGames.some((ig) => ig.appid === appid);
+
+  const menu = document.createElement("div");
+  menu.id = "customContextMenu";
+  menu.className = "dropdown-menu show";
+  menu.style.position = "fixed";
+  menu.style.left = `${e.clientX}px`;
+  menu.style.top = `${e.clientY}px`;
+  menu.style.zIndex = "3000";
+
+  menu.innerHTML = `
+    <button class="dropdown-item" onclick="handleHeroInstallClick(${appid}); closeContextMenu();">
+      ${isInstalled ? "Install / Re-validate" : "Download to NAS"}
+    </button>
+    <button class="dropdown-item" onclick="toggleFavorite(${appid}); closeContextMenu();">
+      ${isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+    </button>
+    <button class="dropdown-item" onclick="toggleGoldbergForGame(${appid}); closeContextMenu();">
+      Toggle Goldberg DRM
+    </button>
+    <button class="dropdown-item" onclick="openGamePropertiesModal(${appid}); closeContextMenu();">
+      Properties...
+    </button>
+  `;
+
+  document.body.appendChild(menu);
+
+  setTimeout(() => {
+    document.addEventListener("click", closeContextMenu, { once: true });
+  }, 10);
+}
+
+function closeContextMenu() {
+  const m = document.getElementById("customContextMenu");
+  if (m) m.remove();
+}
+
+function toggleFavorite(appid) {
+  if (state.favorites.has(appid)) {
+    state.favorites.delete(appid);
+    showToast("Removed from Favorites.", "info");
+  } else {
+    state.favorites.add(appid);
+    showToast("Added to Favorites!", "success");
+  }
+  localStorage.setItem("vf_favorites", JSON.stringify([...state.favorites]));
+  applyLibraryFilters();
+}
+
+// Game Properties Modal & Offline Emulator Management
+function openGamePropertiesModal(appid) {
+  state.gamePropertiesTargetAppId = appid;
+  const game = state.games.find((g) => g.appid === appid);
+  if (!game) return;
+
+  valveSound.playModalOpen();
+  const modal = document.getElementById("gamePropertiesModal");
+  if (!modal) return;
+
+  const titleEl = document.getElementById("propGameTitle");
+  if (titleEl) titleEl.textContent = `${game.name} — Properties`;
+
+  const appIdEl = document.getElementById("propAppIdDisplay");
+  if (appIdEl) appIdEl.textContent = String(game.appid);
+
+  const installed = state.installedGames.find((ig) => ig.appid === appid);
+  const pathEl = document.getElementById("propFilePathDisplay");
+  const sizeEl = document.getElementById("propFileSizeDisplay");
+  const goldbergStatusEl = document.getElementById("propGoldbergStatusDisplay");
+
+  if (installed) {
+    if (pathEl) pathEl.textContent = installed.path || `/downloads/steamapps/common/${installed.folder_name}`;
+    if (sizeEl) sizeEl.textContent = `${(installed.size_bytes / (1024 ** 3)).toFixed(2)} GB`;
+    if (goldbergStatusEl) {
+      goldbergStatusEl.innerHTML = installed.goldberg_patched
+        ? '<span style="color: var(--steam-gold); font-weight: 700;">★ Applied (DRM-Free)</span>'
+        : '<span style="color: var(--steam-text-secondary);">Original Steam DRM</span>';
+    }
+  } else {
+    if (pathEl) pathEl.textContent = "Not installed on NAS";
+    if (sizeEl) sizeEl.textContent = "--";
+    if (goldbergStatusEl) goldbergStatusEl.textContent = "Not installed on NAS";
+  }
+
+  switchPropSubtab("general");
+  modal.style.display = "flex";
+}
+
+function closeGamePropertiesModal() {
+  const modal = document.getElementById("gamePropertiesModal");
+  if (modal) modal.style.display = "none";
+}
+
+function switchPropSubtab(tabName, btn) {
+  valveSound.playSelect();
+  document.querySelectorAll("#gamePropertiesModal .settings-tab-btn").forEach((b) => {
+    b.classList.remove("active");
+  });
+  if (btn) {
+    btn.classList.add("active");
+  } else {
+    const defaultBtn = document.querySelector("#gamePropertiesModal .settings-tab-btn");
+    if (defaultBtn) defaultBtn.classList.add("active");
+  }
+
+  const panes = {
+    general: document.getElementById("propPaneGeneral"),
+    files: document.getElementById("propPaneFiles"),
+    goldberg: document.getElementById("propPaneGoldberg"),
+  };
+
+  Object.keys(panes).forEach((key) => {
+    if (panes[key]) panes[key].style.display = key === tabName ? "block" : "none";
+  });
+}
+
+async function checkGoldbergStatusForHero(appid) {
+  const btn = document.getElementById("btnGoldbergHero");
+  if (!btn) return;
+  try {
+    const res = await fetch(`/api/games/${appid}/goldberg`);
+    if (!res.ok) {
+      btn.style.display = "none";
+      return;
+    }
+    const data = await res.json();
+    btn.style.display = "inline-flex";
+    if (data.patched) {
+      btn.innerHTML = `<span style="color: var(--steam-gold); font-weight: 700;">★ DRM-Free</span>`;
+      btn.title = "Goldberg emulator applied. Click to restore original Steam DRM.";
+    } else {
+      btn.innerHTML = `<span>Goldberg Wrapper</span>`;
+      btn.title = "Click to apply Goldberg DRM-Free wrapper.";
+    }
+  } catch (e) {
+    btn.style.display = "none";
+  }
+}
+
+async function toggleGoldbergForGame(appid) {
+  if (!appid) return;
+  valveSound.playSelect();
+  try {
+    const statusRes = await fetch(`/api/games/${appid}/goldberg`);
+    const statusData = await statusRes.json();
+    const endpoint = statusData.patched ? `/api/games/${appid}/goldberg/revert` : `/api/games/${appid}/goldberg/apply`;
+    const res = await fetch(endpoint, { method: "POST" });
+    const result = await res.json();
+    if (result.success) {
+      valveSound.playSuccess();
+      showToast(statusData.patched ? "Restored original Steam DRM DLLs." : "Applied Goldberg DRM-Free wrapper!", "success");
+      await checkGoldbergStatusForHero(appid);
+      await loadInstalledGames();
+      if (state.gamePropertiesTargetAppId === appid) {
+        const goldbergStatusEl = document.getElementById("propGoldbergStatusDisplay");
+        if (goldbergStatusEl) {
+          goldbergStatusEl.innerHTML = !statusData.patched
+            ? '<span style="color: var(--steam-gold); font-weight: 700;">★ Applied (DRM-Free)</span>'
+            : '<span style="color: var(--steam-text-secondary);">Original Steam DRM</span>';
+        }
+      }
+    } else {
+      showToast(result.message || "Failed to toggle Goldberg emulator.", "error");
+    }
+  } catch (e) {
+    showToast("Error toggling Goldberg wrapper.", "error");
+  }
+}
+
+async function applyGoldbergToGame(appid) {
+  if (!appid) return;
+  valveSound.playSelect();
+  try {
+    const res = await fetch(`/api/games/${appid}/goldberg/apply`, { method: "POST" });
+    const result = await res.json();
+    if (result.success) {
+      valveSound.playSuccess();
+      showToast("Goldberg DRM-free wrapper applied!", "success");
+      await loadInstalledGames();
+      await checkGoldbergStatusForHero(appid);
+    } else {
+      showToast(result.message || "Could not apply Goldberg wrapper.", "error");
+    }
+  } catch (e) {
+    showToast("Error applying Goldberg.", "error");
+  }
+}
+
+async function deleteGameFromNasByAppId(appid) {
+  if (!appid) return;
+  const installed = state.installedGames.find((ig) => ig.appid === appid);
+  if (!installed) {
+    showToast("Game files not found on NAS.", "info");
+    return;
+  }
+  if (confirm(`Are you sure you want to delete '${installed.folder_name}' from your NAS?`)) {
+    closeGamePropertiesModal();
+    await deleteGameFromNas(installed.folder_name);
+  }
+}
+
+function toggleBatchMode() {
+  state.batchMode = !state.batchMode;
+  valveSound.playSelect();
+  const toggleBtn = document.getElementById("batchModeToggleBtn");
+  if (toggleBtn) toggleBtn.classList.toggle("active", state.batchMode);
+  renderSidebarGames();
+  updateBatchBarUI();
+}
+
+function clearLibrarySearch() {
+  const input = document.getElementById("librarySearchInput");
+  if (input) {
+    input.value = "";
+    const clearBtn = document.getElementById("librarySearchClearBtn");
+    if (clearBtn) clearBtn.style.display = "none";
+    applyLibraryFilters();
+  }
+}
+
+
+// ==========================================================================
+// STORE EXPLORER (SEARCH ANY APP ON STEAM)
+// ==========================================================================
+
+async function executeStoreSearch() {
+  const input = document.getElementById("storeSearchInput");
+  const query = input ? input.value.trim() : "";
+  if (!query) return;
+
+  valveSound.playSelect();
+  const grid = document.getElementById("storeSearchResultsGrid");
+  if (grid) grid.innerHTML = `<div style="padding: 24px; color: var(--steam-text-dim);">Searching Steam Store...</div>`;
+
+  try {
+    const res = await fetch(`/api/store/search?q=${encodeURIComponent(query)}`);
+    const data = await res.json();
+    const results = data.results || [];
+
+    if (results.length === 0) {
+      if (grid) grid.innerHTML = `<div style="padding: 24px; color: var(--steam-text-dim);">No store titles found matching '${escapeHtml(query)}'.</div>`;
+      return;
+    }
+
+    let html = "";
+    results.forEach((item) => {
+      html += `
+        <div class="game-capsule-card" style="aspect-ratio: 16/9; max-width: 320px;">
+          <img class="capsule-artwork" src="${item.header_url}">
+          <div class="capsule-overlay" style="opacity: 1; background: linear-gradient(to top, rgba(0,0,0,0.95), transparent);">
+            <div class="capsule-title">${escapeHtml(item.name)}</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+              <span style="font-size: 11px; color: var(--steam-blue-light);">${item.price > 0 ? "$" + item.price.toFixed(2) : "Free"}</span>
+              <button class="btn-steam-green" style="padding: 4px 10px; font-size: 11px;" onclick="queueStoreGame(${item.appid}, '${escapeHtml(item.name)}')">
+                Download to NAS
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+    if (grid) grid.innerHTML = html;
+  } catch (e) {
+    if (grid) grid.innerHTML = `<div style="padding: 24px; color: var(--steam-red);">Error searching Steam Store.</div>`;
+  }
+}
+
+async function queueStoreGame(appid, name) {
   valveSound.playSelect();
   try {
     const res = await fetch("/api/queue", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ games: [{ appid: game.appid, name: game.name }] }),
+      body: JSON.stringify({ games: [{ appid, name }] }),
     });
     if (res.ok) {
-      showToast(`Added '${game.name}' to download queue!`, "success");
+      showToast(`Added '${name}' to download queue!`, "success");
       switchTab("downloads");
     }
   } catch (e) {
-    showToast("Failed to queue download.", "error");
+    showToast("Error queuing store game.", "error");
+  }
+}
+
+// ==========================================================================
+// COMMUNITY NEWS FEED
+// ==========================================================================
+
+async function loadCommunityFeed() {
+  const container = document.getElementById("communityNewsList");
+  if (!container) return;
+
+  container.innerHTML = `<div style="padding: 24px; color: var(--steam-text-dim);">Loading community updates...</div>`;
+
+  // Fetch news for selected game or top library games
+  const targetAppId = state.selectedGame ? state.selectedGame.appid : 730;
+  try {
+    const res = await fetch(`/api/games/${targetAppId}/news`);
+    const data = await res.json();
+    const items = data.news || [];
+
+    if (items.length === 0) {
+      container.innerHTML = `<div style="padding: 24px; color: var(--steam-text-dim);">No community news available.</div>`;
+      return;
+    }
+
+    let html = "";
+    items.forEach((item) => {
+      const dateStr = item.date ? new Date(item.date * 1000).toLocaleDateString() : "--";
+      html += `
+        <div class="steam-panel-box">
+          <div class="panel-title">${escapeHtml(item.title)}</div>
+          <div style="font-size: 11px; color: var(--steam-text-dim); margin-bottom: 8px;">Posted by ${escapeHtml(item.author)} on ${dateStr}</div>
+          <div style="font-size: 13px; color: var(--steam-text-main); line-height: 1.6;">${escapeHtml(item.contents)}</div>
+        </div>
+      `;
+    });
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = `<div style="padding: 24px; color: var(--steam-text-dim);">Could not fetch community feed.</div>`;
   }
 }
 
@@ -527,6 +1031,7 @@ function initSpeedCanvas() {
   if (!canvas) return;
 
   function resizeCanvas() {
+    if (!canvas.parentElement) return;
     canvas.width = canvas.parentElement.clientWidth * window.devicePixelRatio;
     canvas.height = canvas.parentElement.clientHeight * window.devicePixelRatio;
     drawSpeedGraph();
@@ -559,10 +1064,10 @@ function drawSpeedGraph() {
 
   if (state.speedHistory.length < 2) return;
 
-  const maxSpeed = Math.max(...state.speedHistory.map((pt) => Math.max(pt.net, pt.disk)), 1024 * 1024); // at least 1 MB/s
+  const maxSpeed = Math.max(...state.speedHistory.map((pt) => Math.max(pt.net, pt.disk)), 1024 * 1024);
   const stepX = w / (state.speedHistory.length - 1);
 
-  // 1. Draw Network Download Speed Area & Curve (Cyan)
+  // 1. Network Download Speed Area & Curve (Cyan)
   ctx.beginPath();
   ctx.moveTo(0, h);
   state.speedHistory.forEach((pt, idx) => {
@@ -591,7 +1096,7 @@ function drawSpeedGraph() {
   ctx.lineWidth = 2 * window.devicePixelRatio;
   ctx.stroke();
 
-  // 2. Draw Disk Activity Curve (Dashed Green)
+  // 2. Disk Activity Curve (Dashed Green)
   ctx.beginPath();
   ctx.setLineDash([4 * window.devicePixelRatio, 4 * window.devicePixelRatio]);
   state.speedHistory.forEach((pt, idx) => {
@@ -639,7 +1144,7 @@ function recordSpeedSample(netBps, diskBps) {
 function updateActiveDownloadItem() {
   state.activeDownloadItem = state.queue.items.find((i) => i.status === "running") || null;
   const countBadge = document.getElementById("queueCountBadge");
-  const activeCount = state.queue.items.filter((i) => i.status in { queued: 1, running: 1 }).length;
+  const activeCount = state.queue.items.filter((i) => i.status === "queued" || i.status === "running").length;
   if (countBadge) {
     countBadge.textContent = activeCount;
     countBadge.style.display = activeCount > 0 ? "inline-block" : "none";
@@ -660,7 +1165,6 @@ function renderDownloadsView() {
   const activeSection = document.getElementById("activeDownloadHero");
   const queueTable = document.getElementById("upcomingQueueTable");
 
-  // Render Active Download Hero
   if (state.activeDownloadItem) {
     if (activeSection) activeSection.style.display = "flex";
     const item = state.activeDownloadItem;
@@ -684,7 +1188,6 @@ function renderDownloadsView() {
     if (activeSection) activeSection.style.display = "none";
   }
 
-  // Render Queued Items Table
   if (queueTable) {
     const queuedItems = state.queue.items.filter((i) => i.status === "queued");
     if (queuedItems.length === 0) {
@@ -712,6 +1215,11 @@ function renderDownloadsView() {
   }
 }
 
+async function cancelActiveDownload() {
+  if (!state.activeDownloadItem) return;
+  cancelQueueItem(state.activeDownloadItem.id);
+}
+
 async function changeQueuePriority(itemId, direction) {
   try {
     await fetch(`/api/queue/${itemId}/priority`, {
@@ -728,6 +1236,12 @@ async function cancelQueueItem(itemId) {
   } catch (e) {}
 }
 
+async function clearCompletedQueue() {
+  try {
+    await fetch("/api/queue/clear-completed", { method: "POST" });
+  } catch (e) {}
+}
+
 // ==========================================================================
 // VALVE DEVELOPER CONSOLE
 // ==========================================================================
@@ -739,6 +1253,11 @@ function appendConsoleLog(line) {
   p.textContent = line;
   terminal.appendChild(p);
   terminal.scrollTop = terminal.scrollHeight;
+}
+
+function clearConsoleLog() {
+  const terminal = document.getElementById("consoleTerminal");
+  if (terminal) terminal.innerHTML = "";
 }
 
 async function executeConsoleInput(e) {
@@ -835,8 +1354,34 @@ async function deleteGameFromNas(folderName) {
       showToast(`Deleted '${folderName}' from NAS.`, "info");
       await refreshStorageInfo();
       await loadInstalledGames();
+      applyLibraryFilters();
     }
   } catch (e) {}
+}
+
+// ==========================================================================
+// STEAM DECK / BIG PICTURE CAROUSEL
+// ==========================================================================
+
+function renderBigPictureCarousel() {
+  let container = document.getElementById("deckHomeCarousel");
+  if (!container) return;
+
+  const displayGames = state.filteredGames.slice(0, 15);
+  let html = "";
+  displayGames.forEach((game) => {
+    const playtimeHrs = (game.playtime_forever / 60).toFixed(1);
+    html += `
+      <div class="deck-game-card" tabindex="0" onclick="selectGame(${game.appid}); toggleBigPictureMode();">
+        <img class="deck-card-banner" src="${game.header_url || game.capsule_url}">
+        <div class="deck-card-info">
+          <div class="deck-card-title">${escapeHtml(game.name)}</div>
+          <div class="deck-card-time">${playtimeHrs} hrs played</div>
+        </div>
+      </div>
+    `;
+  });
+  container.innerHTML = html;
 }
 
 // ==========================================================================
@@ -905,8 +1450,7 @@ async function checkUpdates(force = false) {
     const res = await fetch(`/api/system/update/check?force=${force}`);
     const data = await res.json();
     if (data.update_available) {
-      const banner = document.getElementById("updateAlertPill");
-      if (banner) banner.style.display = "flex";
+      showToast("A new container release is available!", "info");
     }
   } catch (e) {}
 }
@@ -952,16 +1496,33 @@ function escapeHtml(str) {
 }
 
 function setupEventListeners() {
-  // Search bar input
   const searchInput = document.getElementById("librarySearchInput");
+  const searchClear = document.getElementById("librarySearchClearBtn");
   if (searchInput) {
-    searchInput.addEventListener("input", applyLibraryFilters);
+    searchInput.addEventListener("input", (e) => {
+      if (searchClear) {
+        searchClear.style.display = e.target.value ? "inline-block" : "none";
+      }
+      applyLibraryFilters();
+    });
   }
 
-  // Developer Console input
   const consoleInput = document.getElementById("consoleCommandInput");
   if (consoleInput) {
     consoleInput.addEventListener("keydown", executeConsoleInput);
   }
+
+  // Keyboard shortcut: ESC to exit Steam Deck / Big Picture Mode
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      if (state.bigPictureMode) {
+        toggleBigPictureMode();
+      } else {
+        closeSettingsModal();
+        closeGamePropertiesModal();
+        closeQrLoginModal();
+      }
+    }
+  });
 }
 

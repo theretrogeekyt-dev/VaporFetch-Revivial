@@ -138,3 +138,133 @@ body.mode-bigpicture .btn-bigpicture {
   font-weight: 800;
 }
 
+/* Steam Deck Panorama Fullscreen Overlay */
+.deck-fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2500;
+  background: radial-gradient(circle at 50% 30%, #1a2538 0%, #0d121c 100%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: deckFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes deckFadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.deck-top-bar {
+  height: 64px;
+  padding: 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(13, 18, 28, 0.9);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.deck-top-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.deck-system-title {
+  font-weight: 900;
+  font-size: 16px;
+  letter-spacing: 1.5px;
+  color: #fff;
+}
+
+.deck-clock {
+  font-size: 14px;
+  color: var(--steam-blue-light);
+  font-weight: 700;
+}
+
+.deck-top-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.deck-nas-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(102, 192, 244, 0.1);
+  border: 1px solid rgba(102, 192, 244, 0.3);
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  color: var(--steam-blue-light);
+  font-weight: 600;
+}
+
+.deck-status-led {
+  color: var(--steam-in-game-green);
+  font-size: 10px;
+}
+
+.btn-deck-exit {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--steam-border);
+  color: var(--steam-text-bright);
+  padding: 6px 14px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btn-deck-exit:hover {
+  background: var(--steam-blue-dark);
+  border-color: var(--steam-blue-light);
+  color: #fff;
+}
+
+.btn-deck-exit kbd {
+  background: rgba(0, 0, 0, 0.4);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: inherit;
+  color: var(--steam-text-secondary);
+}
+
+.deck-main-scroll {
+  flex: 1;
+  padding: 40px 32px 80px 32px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.deck-shelf-header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.deck-shelf-title {
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 1.2px;
+  color: #fff;
+}
+
+.deck-shelf-sub {
+  font-size: 13px;
+  color: var(--steam-text-secondary);
+}
+
+

@@ -1531,3 +1531,123 @@ body {
   to { transform: translateX(0); opacity: 1; }
 }
 
+/* ==========================================================================
+   ENHANCED TOOLBAR & BATCH ACTION STYLES
+   ========================================================================== */
+
+.sidebar-toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.view-mode-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.view-mode-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  color: var(--steam-text-secondary);
+  width: 28px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.view-mode-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--steam-text-bright);
+}
+
+.view-mode-btn.active {
+  background: var(--steam-blue-dark);
+  color: var(--steam-blue-light);
+  border-color: var(--steam-blue-mid);
+}
+
+.search-clear-btn {
+  background: transparent;
+  border: none;
+  color: var(--steam-text-dim);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.search-clear-btn:hover {
+  color: var(--steam-text-bright);
+}
+
+/* Floating Batch Action Bar Sub-elements */
+.batch-count-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.batch-count-text {
+  font-weight: 700;
+  color: var(--steam-text-bright);
+  font-size: 13px;
+  letter-spacing: 0.3px;
+}
+
+.batch-controls-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.batch-goldberg-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--steam-text-main);
+  cursor: pointer;
+  user-select: none;
+}
+
+.batch-goldberg-toggle input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--steam-blue-light);
+}
+
+.btn-steam-danger {
+  background: rgba(217, 68, 68, 0.15);
+  border: 1px solid var(--steam-red);
+  color: var(--steam-red);
+  padding: 8px 16px;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+  transition: all 0.15s ease;
+}
+
+.btn-steam-danger:hover {
+  background: var(--steam-red);
+  color: #fff;
+}
+
+.prop-readonly-box {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--steam-border-subtle);
+  border-radius: var(--border-radius-sm);
+  padding: 8px 12px;
+  color: var(--steam-text-bright);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+
