@@ -10,7 +10,10 @@ from app.config import DATA_DIR, BASE_DIR
 
 # Persistent directory where Goldberg binaries are maintained
 GOLDBERG_ASSETS_DIR = Path(os.getenv("GOLDBERG_PATH", str(DATA_DIR / "goldberg")))
-GOLDBERG_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    GOLDBERG_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+except Exception as _e:
+    print(f"[Goldberg] Notice: could not create {GOLDBERG_ASSETS_DIR} directly: {_e}")
 
 # Release URL fallback list for Goldberg Steam Emulator
 GOLDBERG_RELEASE_URLS = [
@@ -55,19 +58,23 @@ class GoldbergManager:
 
     def is_available(self) -> bool:
         """Returns True if both 32-bit and 64-bit emulator DLLs exist and are readable."""
-        return self.dll32_path.exists() and self.dll64_path.exists()
+        try:
+            return self.dll32_path.exists() and self.dll64_path.exists()
+        except Exception:
+            return False
 
     async def ensure_binaries(self) -> bool:
         """Ensures Goldberg DLLs exist; copies bundled binaries or pulls from mirror if missing."""
         # 1. Check if already available in self.dir or candidate
         if self.is_available():
             try:
-                if not (self.dir / "steam_api.dll").exists() and self.dll32_path.exists():
+                self.dir.mkdir(parents=True, exist_ok=True)
+                if not (self.dir / "steam_api.dll").exists() and self.dll32_path.exists() and self.dll32_path != (self.dir / "steam_api.dll"):
                     shutil.copy2(self.dll32_path, self.dir / "steam_api.dll")
-                if not (self.dir / "steam_api64.dll").exists() and self.dll64_path.exists():
+                if not (self.dir / "steam_api64.dll").exists() and self.dll64_path.exists() and self.dll64_path != (self.dir / "steam_api64.dll"):
                     shutil.copy2(self.dll64_path, self.dir / "steam_api64.dll")
             except Exception as e:
-                print(f"[Goldberg] Warning syncing binaries to data directory: {e}")
+                print(f"[Goldberg] Notice: Using bundled binaries directly (could not mirror to persistent data: {e})")
             return True
 
         # 2. Check bundled candidates explicitly

@@ -5,7 +5,17 @@ PUID=${PUID:-1000}
 PGID=${PGID:-1000}
 UMASK=${UMASK:-002}
 
-echo "[VaporFetch] Initializing with PUID=${PUID}, PGID=${PGID}, UMASK=${UMASK}"
+echo "[VaporFetch] Starting with PUID=${PUID}, PGID=${PGID}, UMASK=${UMASK}"
+
+# Sanitize UMASK:
+# Standard NAS umasks are 002, 022, 000, or 027.
+# If a user accidentally passes their PGID (e.g. UMASK=100) or a mask with user-deny bits (1xx, 2xx, 4xx),
+# it strips owner execute/write permissions and breaks directory access.
+if [[ "$UMASK" =~ ^[1-7] ]] || [[ ! "$UMASK" =~ ^0?[0-7]{3}$ ]]; then
+    echo "[VaporFetch] WARNING: UMASK='${UMASK}' would revoke user/owner permissions (e.g. PGID=100 accidentally set as UMASK)."
+    echo "[VaporFetch] Resetting UMASK to 002 for safe NAS file permissions."
+    UMASK="002"
+fi
 
 # Apply umask for NAS storage permissions
 umask "$UMASK"
@@ -29,11 +39,18 @@ fi
 
 export HOME="/home/steam"
 
-# Ensure persistent directories inside /app/data
-mkdir -p /app/data/steam_home/.steam
+# Pre-create all required persistent directories inside /app/data while root
+mkdir -p /app/data/goldberg
+mkdir -p /app/data/steam_home/.steam/steam
 mkdir -p /app/data/steam_home/.local/share/Steam
 mkdir -p /app/data/steam_home/steamcmd_config
+mkdir -p /app/data/steam_home/Steam/config
 mkdir -p /downloads
+
+# Provision bundled Goldberg binaries into /app/data/goldberg if present
+if [ -d "/app/app/assets/goldberg" ]; then
+    cp -u /app/app/assets/goldberg/* /app/data/goldberg/ 2>/dev/null || true
+fi
 
 # Symlink /home/steam to /app/data/steam_home to guarantee credentials persist
 if [ -d "/home/steam" ] && [ ! -L "/home/steam" ]; then
@@ -74,13 +91,11 @@ done
 chmod -R 777 /steamcmd 2>/dev/null || true
 chmod -R +x /steamcmd 2>/dev/null || true
 
-chown -R "$PUID:$PGID" /app/data /steamcmd /app 2>/dev/null || true
-if [ -d "/downloads" ]; then
-    chown "$PUID:$PGID" /downloads 2>/dev/null || true
-fi
+# Fix ownership and ensure owner/group have read, write and directory traversal permissions
+chown -R "$PUID:$PGID" /app/data /downloads /steamcmd /app 2>/dev/null || true
+chmod -R u+rwX,g+rwX /app/data /downloads 2>/dev/null || true
 
-echo "[VaporFetch] Running as ${USER_NAME} (${PUID}:${PGID})"
+echo "[VaporFetch] Running as ${USER_NAME} (${PUID}:${PGID}) with HOME=${HOME}"
 
-# Drop privileges and launch
+# Drop privileges and launch application
 exec gosu "$PUID:$PGID" env HOME=/home/steam "$@"
-

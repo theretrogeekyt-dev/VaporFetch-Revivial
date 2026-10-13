@@ -11,11 +11,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Persistent app storage for settings, session tokens, and Steam credentials
 DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data" if Path("/app/data").exists() else str(BASE_DIR / "data")))
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+except Exception as _e:
+    print(f"[Config] Notice: could not create DATA_DIR {DATA_DIR}: {_e}")
 
 # NAS downloads directory where games are installed
 DOWNLOAD_DIR = Path(os.getenv("DOWNLOAD_DIR", "/downloads" if Path("/downloads").exists() else str(BASE_DIR / "downloads")))
-DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+except Exception as _e:
+    print(f"[Config] Notice: could not create DOWNLOAD_DIR {DOWNLOAD_DIR}: {_e}")
 
 # Application metadata & environment
 APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
@@ -57,7 +63,10 @@ DEFAULT_SETTINGS = {
 }
 
 STEAM_HOME_DIR = DATA_DIR / "steam_home"
-STEAM_HOME_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    STEAM_HOME_DIR.mkdir(parents=True, exist_ok=True)
+except Exception as _e:
+    print(f"[Config] Notice: could not create STEAM_HOME_DIR {STEAM_HOME_DIR}: {_e}")
 
 def sync_steam_credentials():
     """
