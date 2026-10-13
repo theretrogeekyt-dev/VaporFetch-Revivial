@@ -48,15 +48,15 @@ Create a `docker-compose.yml` file on your NAS or server:
 ```yaml
 services:
   vaporfetch:
-    image: ghcr.io/theretrogeekyt-dev/vaporfetch:latest
+    image: ghcr.io/theretrogeekyt-dev/vaporfetch-revivial:latest
     container_name: vaporfetch
     restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
-      - PUID=1000                  # Your NAS user ID (run: id -u)
-      - PGID=1000                  # Your NAS group ID (run: id -g)
-      - UMASK=002                  # Group-writable permissions
+      - PUID=1000                  # Your NAS user ID (run: id -u, e.g. 1026 on Synology)
+      - PGID=100                   # Your NAS group ID (run: id -g, e.g. 100 on Synology)
+      - UMASK=002                  # Permissions mask: MUST be 002 or 022 (do NOT set to 100 or 101!)
       - STEAM_API_KEY=             # Optional: https://steamcommunity.com/dev/apikey
       - FORCE_PLATFORM=windows     # Downloads Windows depots for Proton/NAS game shares
     volumes:
@@ -83,12 +83,12 @@ docker run -d \
   --restart unless-stopped \
   -p 8080:8080 \
   -e PUID=1000 \
-  -e PGID=1000 \
+  -e PGID=100 \
   -e UMASK=002 \
   -e FORCE_PLATFORM=windows \
   -v /path/to/nas/data:/app/data \
   -v /path/to/nas/games:/downloads \
-  ghcr.io/theretrogeekyt-dev/vaporfetch:latest
+  ghcr.io/theretrogeekyt-dev/vaporfetch-revivial:latest
 ```
 
 ---
@@ -97,9 +97,9 @@ docker run -d \
 
 | Variable | Default | Description |
 |---|---|---|
-| `PUID` | `1000` | User ID for downloaded files on host storage (use `99` on Unraid) |
-| `PGID` | `1000` | Group ID for downloaded files on host storage (use `100` on Unraid) |
-| `UMASK` | `002` | File creation mask (`002` allows group write permissions) |
+| `PUID` | `1000` | User ID for downloaded files on host storage (`1026` on Synology, `99` on Unraid) |
+| `PGID` | `100` | Group ID for downloaded files on host storage (`100` on Synology, `100` on Unraid) |
+| `UMASK` | `002` | File creation mask: **MUST be `002` or `022`**. Never set to `100` or `101`, as that removes directory execute/traversal permissions and causes Permission Denied errors |
 | `FORCE_PLATFORM` | `windows` | Depot platform (`windows`, `linux`, `macos`) |
 | `STEAM_API_KEY` | *(empty)* | Optional Steam Web API Key for private profile libraries |
 | `DATA_DIR` | `/app/data` | Container path for persistent tokens and configurations |

@@ -1,19 +1,17 @@
 services:
   vaporfetch:
-    build: .
-    image: vaporfetch:latest
+    image: ghcr.io/theretrogeekyt-dev/vaporfetch-revivial:latest
     container_name: vaporfetch
     restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
-      - PUID=1000                  # NAS user ID (id -u)
-      - PGID=1000                  # NAS group ID (id -g)
-      - UMASK=002                  # Standard NAS group-writable permissions
+      - PUID=1000                  # NAS user ID (id -u; e.g. 1026 on Synology, 99 on Unraid)
+      - PGID=100                   # NAS group ID (id -g; e.g. 100 on Synology/Unraid)
+      - UMASK=002                  # Permissions mask: MUST be 002 or 022 (Do NOT set to 100 or 101!)
       - STEAM_API_KEY=             # Optional: https://steamcommunity.com/dev/apikey
       - FORCE_PLATFORM=windows     # Downloads Windows depots for Proton/NAS game shares
     volumes:
       - ./data:/app/data           # Persistent auth tokens, sentry files, and settings
       - ./downloads:/downloads     # Mount path to your NAS game share
       - /var/run/docker.sock:/var/run/docker.sock # Optional: Enables 1-click in-app container updates
-
