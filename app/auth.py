@@ -194,3 +194,4 @@ class SteamAuthManager:
         return None
 
 auth_manager = SteamAuthManager()
+

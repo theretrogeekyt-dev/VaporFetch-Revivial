@@ -139,3 +139,4 @@ class SteamCmdAuthManager:
         self.status_message = "Authorization cancelled."
 
 steamcmd_auth_manager = SteamCmdAuthManager()
+

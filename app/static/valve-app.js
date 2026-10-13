@@ -964,3 +964,4 @@ function setupEventListeners() {
     consoleInput.addEventListener("keydown", executeConsoleInput);
   }
 }
+

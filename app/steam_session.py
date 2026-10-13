@@ -408,3 +408,4 @@ class SteamCmdSessionWorker:
         self.process = None
 
 steam_session = SteamCmdSessionWorker()
+

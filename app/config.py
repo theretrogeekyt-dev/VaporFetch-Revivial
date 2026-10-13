@@ -325,3 +325,4 @@ def extract_account_info_from_loginusers(account_name: Optional[str] = None) -> 
                 pass
 
     return None
+

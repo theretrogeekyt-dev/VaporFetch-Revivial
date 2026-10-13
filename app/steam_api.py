@@ -262,3 +262,4 @@ class SteamApiClient:
         return []
 
 steam_api_client = SteamApiClient()
+

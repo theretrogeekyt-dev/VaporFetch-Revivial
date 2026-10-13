@@ -83,3 +83,4 @@ echo "[VaporFetch] Running as ${USER_NAME} (${PUID}:${PGID})"
 
 # Drop privileges and launch
 exec gosu "$PUID:$PGID" env HOME=/home/steam "$@"
+

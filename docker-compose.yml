@@ -16,3 +16,4 @@ services:
       - ./data:/app/data           # Persistent auth tokens, sentry files, and settings
       - ./downloads:/downloads     # Mount path to your NAS game share
       - /var/run/docker.sock:/var/run/docker.sock # Optional: Enables 1-click in-app container updates
+

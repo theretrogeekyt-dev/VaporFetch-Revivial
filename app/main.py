@@ -511,3 +511,4 @@ async def apply_container_update():
         return await container_updater.apply_update()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+

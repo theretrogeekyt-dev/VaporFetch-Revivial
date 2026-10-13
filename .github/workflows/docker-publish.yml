@@ -51,3 +51,4 @@ jobs:
             APP_VERSION=2.0.0
           cache-from: type=gha
           cache-to: type=gha,mode=max
+

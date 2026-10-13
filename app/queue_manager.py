@@ -433,3 +433,4 @@ class DownloadQueueManager:
             await self.broadcast("item_update", item.model_dump())
 
 queue_manager = DownloadQueueManager()
+
