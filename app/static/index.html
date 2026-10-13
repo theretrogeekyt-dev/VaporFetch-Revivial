@@ -24,11 +24,53 @@
         </div>
 
         <nav class="steam-menubar">
-          <button class="menu-button" onclick="openSettingsModal()">Steam</button>
-          <button class="menu-button" onclick="switchTab('library')">View</button>
-          <button class="menu-button" onclick="openQrLoginModal()">Friends</button>
-          <button class="menu-button" onclick="switchTab('downloads')">Games</button>
-          <button class="menu-button" onclick="openSettingsModal()">Help</button>
+          <div class="menu-item-wrapper">
+            <button class="menu-button" onclick="toggleMenuDropdown('steamMenu', event)">Steam</button>
+            <div id="steamMenu" class="dropdown-menu">
+              <button class="dropdown-item" onclick="openSettingsModal('account')">Settings</button>
+              <button class="dropdown-item" onclick="openSettingsModal('goldberg')">DRM-Free Wrapper Settings</button>
+              <button class="dropdown-item" onclick="checkUpdates(true)">Check for Updates...</button>
+              <div class="dropdown-divider"></div>
+              <button class="dropdown-item" onclick="openQrLoginModal()">Sign in to Steam...</button>
+              <button class="dropdown-item" onclick="logout()">Exit / Log Out</button>
+            </div>
+          </div>
+
+          <div class="menu-item-wrapper">
+            <button class="menu-button" onclick="toggleMenuDropdown('viewMenu', event)">View</button>
+            <div id="viewMenu" class="dropdown-menu">
+              <button class="dropdown-item" onclick="switchTab('library')">Games Library</button>
+              <button class="dropdown-item" onclick="switchTab('store')">Steam Store &amp; Depots</button>
+              <button class="dropdown-item" onclick="switchTab('downloads')">Downloads Manager</button>
+              <button class="dropdown-item" onclick="switchTab('storage')">Storage &amp; NAS Files</button>
+              <button class="dropdown-item" onclick="switchTab('community')">Community News</button>
+              <div class="dropdown-divider"></div>
+              <button class="dropdown-item" onclick="toggleBigPictureMode()">Big Picture Mode</button>
+            </div>
+          </div>
+
+          <div class="menu-item-wrapper">
+            <button class="menu-button" onclick="toggleMenuDropdown('friendsMenu', event)">Friends</button>
+            <div id="friendsMenu" class="dropdown-menu">
+              <button class="dropdown-item" onclick="openQrLoginModal()">Sign in with Steam Guard</button>
+            </div>
+          </div>
+
+          <div class="menu-item-wrapper">
+            <button class="menu-button" onclick="toggleMenuDropdown('gamesMenu', event)">Games</button>
+            <div id="gamesMenu" class="dropdown-menu">
+              <button class="dropdown-item" onclick="switchTab('library')">View Games Library</button>
+              <button class="dropdown-item" onclick="switchTab('store')">Add / Search Store Depots</button>
+            </div>
+          </div>
+
+          <div class="menu-item-wrapper">
+            <button class="menu-button" onclick="toggleMenuDropdown('helpMenu', event)">Help</button>
+            <div id="helpMenu" class="dropdown-menu">
+              <button class="dropdown-item" onclick="switchTab('downloads')">SteamCMD Developer Console</button>
+              <button class="dropdown-item" onclick="openAboutModal()">About VaporFetch Client</button>
+            </div>
+          </div>
         </nav>
       </div>
 
@@ -95,7 +137,7 @@
             <span id="profilePersonaName" class="profile-persona">Steam User</span>
             <span class="profile-status">Online</span>
           </div>
-          <span class="steam-level-badge">LVL 42</span>
+          <span id="profileLevelBadge" class="steam-level-badge">LVL 1</span>
         </div>
 
         <button id="navLoginBtn" class="btn-steam-green" style="padding: 6px 14px; font-size: 12px;" onclick="openQrLoginModal()">
@@ -331,15 +373,21 @@
 
   </main>
 
-  <!-- ==================== STEAM GUARD LOGIN DIALOG ==================== -->
+  <!-- ==================== STEAM SIGN-IN DIALOG ==================== -->
   <div id="qrLoginModal" class="modal-backdrop" style="display: none;" onclick="if(event.target===this) closeQrLoginModal()">
-    <div class="valve-modal-dialog" style="max-width: 440px;">
+    <div class="valve-modal-dialog" style="max-width: 460px;">
       <div class="modal-dialog-header">
         <span class="dialog-title">Sign in to Steam</span>
         <button class="modal-close-btn" onclick="closeQrLoginModal()">&times;</button>
       </div>
 
-      <div class="qr-login-container">
+      <div class="properties-nav-row" style="padding: 12px 20px 0 20px; border-bottom: 1px solid var(--steam-border-subtle); display: flex; gap: 8px;">
+        <button class="filter-pill active" id="loginTabQrBtn" onclick="switchLoginAuthMode('qr')">Steam Mobile QR</button>
+        <button class="filter-pill" id="loginTabCredsBtn" onclick="switchLoginAuthMode('creds')">Account Credentials</button>
+      </div>
+
+      <!-- Mode 1: QR Radar -->
+      <div id="loginModeQr" class="qr-login-container">
         <div class="qr-radar-box">
           <img id="qrCodeImage" class="qr-code-img" src="" alt="Steam Guard QR">
           <div class="qr-sweep-line"></div>
@@ -358,6 +406,27 @@
           Waiting for Steam Mobile approval...
         </div>
       </div>
+
+      <!-- Mode 2: Username & Password / SteamCMD -->
+      <form id="loginModeCreds" style="display: none; padding: 24px; flex-direction: column; gap: 14px;" onsubmit="submitCredentialsLogin(event)">
+        <div class="form-group">
+          <label class="form-label" for="loginUsername">Steam Account Name</label>
+          <input type="text" id="loginUsername" class="form-input" placeholder="Your Steam account login name" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="loginPassword">Password</label>
+          <input type="password" id="loginPassword" class="form-input" placeholder="Your Steam password" required>
+        </div>
+        <div id="login2faGroup" class="form-group" style="display: none;">
+          <label class="form-label" for="login2faCode">Steam Guard 2FA Code</label>
+          <input type="text" id="login2faCode" class="form-input" placeholder="5-character code from Steam Mobile/Email">
+        </div>
+        <div id="loginCredsStatus" style="font-size: 12px; color: var(--steam-blue-light); min-height: 18px;"></div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px;">
+          <button type="button" class="btn-steam-action" onclick="closeQrLoginModal()">Cancel</button>
+          <button type="submit" id="loginCredsSubmitBtn" class="btn-steam-green" style="padding: 8px 24px; font-size: 13px;">Sign In</button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -371,50 +440,102 @@
 
       <div class="settings-dialog-layout">
         <aside class="settings-sidebar">
-          <button class="settings-tab-btn active">Account</button>
-          <button class="settings-tab-btn">Downloads</button>
-          <button class="settings-tab-btn">Storage & NAS</button>
-          <button class="settings-tab-btn">Offline Wrapper</button>
-          <button class="settings-tab-btn">Interface</button>
+          <button class="settings-tab-btn active" onclick="switchSettingsSubtab('account', this)">Account</button>
+          <button class="settings-tab-btn" onclick="switchSettingsSubtab('downloads', this)">Downloads</button>
+          <button class="settings-tab-btn" onclick="switchSettingsSubtab('storage', this)">Storage &amp; NAS</button>
+          <button class="settings-tab-btn" onclick="switchSettingsSubtab('goldberg', this)">Offline Wrapper</button>
+          <button class="settings-tab-btn" onclick="switchSettingsSubtab('interface', this)">Interface</button>
         </aside>
 
         <form class="settings-body-pane" onsubmit="saveSettings(event)">
-          <div class="form-group">
-            <label class="form-label" for="cfgSteamApiKey">Steam Web API Key</label>
-            <input type="text" id="cfgSteamApiKey" class="form-input" placeholder="32-character hexadecimal key">
-            <span class="form-helper">Required if your profile game library is private.</span>
+          <!-- Pane 1: Account -->
+          <div id="settingsPaneAccount" class="settings-content-pane">
+            <div class="form-group">
+              <label class="form-label">Current Account</label>
+              <div id="settingsAccountNameDisplay" class="prop-readonly-box">Not signed in</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="cfgSteamApiKey">Steam Web API Key</label>
+              <input type="text" id="cfgSteamApiKey" class="form-input" placeholder="32-character hexadecimal key">
+              <span class="form-helper">Required to fetch your library games if your Steam profile is set to Private.</span>
+            </div>
+            <div style="margin-top: 14px;">
+              <button type="button" class="btn-steam-action" onclick="closeSettingsModal(); openQrLoginModal();">Manage Steam Sign-in</button>
+            </div>
           </div>
 
-          <div class="form-group">
-            <label class="form-label" for="cfgForcePlatform">Depot Platform Architecture</label>
-            <select id="cfgForcePlatform" class="form-select">
-              <option value="windows">Windows (Recommended for Proton/NAS)</option>
-              <option value="linux">Linux (Native Linux binaries)</option>
-              <option value="macos">macOS</option>
-            </select>
-            <span class="form-helper">Forces SteamCMD to fetch Windows game files on Linux.</span>
+          <!-- Pane 2: Downloads -->
+          <div id="settingsPaneDownloads" class="settings-content-pane" style="display: none;">
+            <div class="form-group">
+              <label class="form-label" for="cfgForcePlatform">Depot Platform Architecture</label>
+              <select id="cfgForcePlatform" class="form-select">
+                <option value="windows">Windows (Recommended for Proton &amp; NAS shares)</option>
+                <option value="linux">Linux (Native Linux ELF binaries)</option>
+                <option value="macos">macOS</option>
+              </select>
+              <span class="form-helper">Forces SteamCMD to download Windows depots when running on Linux containers.</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Download Pipeline</label>
+              <div class="prop-readonly-box">Sequential Batch Downloader (SteamCMD Persistent Session)</div>
+              <span class="form-helper">Downloads run sequentially to prevent NAS disk thrashing and maximize bandwidth.</span>
+            </div>
           </div>
 
-          <div class="form-group">
-            <label class="form-label">DRM-Free Offline Play (Goldberg)</label>
-            <label style="display: flex; align-items: center; gap: 8px; color: var(--steam-text-bright); cursor: pointer; margin-top: 6px;">
-              <input type="checkbox" id="cfgEnableGoldberg">
-              <span>Auto-apply Goldberg Emulator to downloaded games</span>
-            </label>
-            <span class="form-helper">Replaces steam_api(64).dll so supported games launch offline without the Steam client.</span>
+          <!-- Pane 3: Storage & NAS -->
+          <div id="settingsPaneStorage" class="settings-content-pane" style="display: none;">
+            <div class="form-group">
+              <label class="form-label">Mounted NAS Path</label>
+              <div class="prop-readonly-box">/downloads</div>
+              <span class="form-helper">All downloaded games reside in /downloads/steamapps/common/</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Directory Flattening</label>
+              <div class="prop-readonly-box">Enabled</div>
+              <span class="form-helper">Nested depot folders are automatically flattened so game executables are located cleanly in root.</span>
+            </div>
+            <div style="margin-top: 14px;">
+              <button type="button" class="btn-steam-action" onclick="closeSettingsModal(); switchTab('storage');">View NAS Storage Allocation</button>
+            </div>
           </div>
 
-          <div class="form-group">
-            <label class="form-label">Audio & Feedback</label>
-            <label style="display: flex; align-items: center; gap: 8px; color: var(--steam-text-bright); cursor: pointer; margin-top: 6px;">
-              <input type="checkbox" id="cfgEnableSound" checked>
-              <span>Enable Valve UI audio cues (ticks, chimes, alerts)</span>
-            </label>
+          <!-- Pane 4: Offline Wrapper -->
+          <div id="settingsPaneGoldberg" class="settings-content-pane" style="display: none;">
+            <div class="form-group">
+              <label class="form-label">DRM-Free Offline Play (Goldberg)</label>
+              <label style="display: flex; align-items: center; gap: 8px; color: var(--steam-text-bright); cursor: pointer; margin-top: 6px;">
+                <input type="checkbox" id="cfgEnableGoldberg">
+                <span>Auto-apply Goldberg Emulator to downloaded games</span>
+              </label>
+              <span class="form-helper">Replaces steam_api(64).dll so supported games launch offline without the Steam client.</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Bundled Goldberg Binaries</label>
+              <div class="prop-readonly-box" id="settingsGoldbergBinariesStatus">steam_api.dll (32-bit) &bull; steam_api64.dll (64-bit) [Pre-bundled]</div>
+            </div>
           </div>
 
-          <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
+          <!-- Pane 5: Interface -->
+          <div id="settingsPaneInterface" class="settings-content-pane" style="display: none;">
+            <div class="form-group">
+              <label class="form-label">Audio &amp; Feedback</label>
+              <label style="display: flex; align-items: center; gap: 8px; color: var(--steam-text-bright); cursor: pointer; margin-top: 6px;">
+                <input type="checkbox" id="cfgEnableSound" checked>
+                <span>Enable Valve UI audio cues (ticks, chimes, celebration alerts)</span>
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Client Version</label>
+              <div class="prop-readonly-box">VaporFetch Revival v2.0.0 (Valve Desktop &amp; Panorama UI)</div>
+            </div>
+            <div style="margin-top: 14px;">
+              <button type="button" class="btn-steam-action" onclick="checkUpdates(true)">Check for Updates...</button>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; border-top: 1px solid var(--steam-border-subtle); padding-top: 16px;">
             <button type="button" class="btn-steam-action" onclick="closeSettingsModal()">Cancel</button>
-            <button type="submit" class="btn-steam-green" style="padding: 10px 24px; font-size: 13px;">Save</button>
+            <button type="submit" class="btn-steam-green" style="padding: 8px 24px; font-size: 13px;">Save Settings</button>
           </div>
         </form>
       </div>
@@ -524,6 +645,30 @@
       <div class="guide-pill"><span class="controller-button-badge">B</span> Back</div>
       <div class="guide-pill"><span class="controller-button-badge">X</span> Queue Download</div>
       <div class="guide-pill"><span class="controller-button-badge">Y</span> Search</div>
+    </div>
+  </div>
+
+  <!-- ==================== ABOUT VAPORFETCH DIALOG ==================== -->
+  <div id="aboutModal" class="modal-backdrop" style="display: none;" onclick="if(event.target===this) closeAboutModal()">
+    <div class="valve-modal-dialog" style="max-width: 480px;">
+      <div class="modal-dialog-header">
+        <span class="dialog-title">About VaporFetch Client</span>
+        <button class="modal-close-btn" onclick="closeAboutModal()">&times;</button>
+      </div>
+      <div style="padding: 24px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px;">
+        <svg class="valve-icon" style="width: 56px; height: 56px; color: var(--steam-blue-light);" viewBox="0 0 24 24">
+          <path d="M12 2C6.48 2 2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15.2l-2.4-1.2v-.03c-.34-.17-.6-.46-.73-.83L2.24 11.2C2.08 11.46 2 11.72 2 12c0 5.52 4.48 10 10 10s10-4.48 10-10S17.52 2 12 2zm3.3 14.1c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" fill="currentColor"/>
+        </svg>
+        <h2 style="font-size: 20px; font-weight: 800; color: #fff;">VaporFetch Revival</h2>
+        <div style="font-size: 13px; color: var(--steam-blue-light); font-weight: 700;">Version 2.0.0 (Valve Desktop &amp; Panorama UI)</div>
+        <p style="font-size: 12px; color: var(--steam-text-secondary); line-height: 1.6; max-width: 380px;">
+          An authentic recreation of Valve's Steam Desktop Client &amp; Steam Deck Panorama interface for headless NAS game downloads, persistent SteamCMD sessions, and DRM-free offline play.
+        </p>
+        <div style="display: flex; gap: 8px; font-size: 11px; color: var(--steam-text-dim);">
+          <span>FastAPI</span> &bull; <span>SteamCMD</span> &bull; <span>Goldberg Emulator</span> &bull; <span>Web Audio</span>
+        </div>
+        <button class="btn-steam-green" style="padding: 8px 24px; margin-top: 10px;" onclick="closeAboutModal()">OK</button>
+      </div>
     </div>
   </div>
 

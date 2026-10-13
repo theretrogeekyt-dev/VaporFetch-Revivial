@@ -91,6 +91,11 @@ function switchTab(tabName) {
     loadInstalledGames();
   } else if (tabName === "community") {
     loadCommunityFeed();
+  } else if (tabName === "store") {
+    const input = document.getElementById("storeSearchInput");
+    if (!input || !input.value.trim()) {
+      loadStoreFeatured();
+    }
   }
 }
 
@@ -104,6 +109,10 @@ function toggleBigPictureMode() {
     if (deckOverlay) deckOverlay.style.display = "flex";
     updateDeckClock();
     renderBigPictureCarousel();
+    setTimeout(() => {
+      const firstCard = document.querySelector("#deckHomeCarousel .deck-game-card");
+      if (firstCard) firstCard.focus();
+    }, 100);
   } else {
     valveSound.playBack();
     if (deckOverlay) deckOverlay.style.display = "none";
@@ -154,8 +163,10 @@ function updateUserUI(session) {
 
     const nameEl = document.getElementById("profilePersonaName");
     const avatarEl = document.getElementById("profileAvatarImg");
+    const levelEl = document.getElementById("profileLevelBadge");
     if (nameEl) nameEl.textContent = session.personaname || session.account_name || "Steam User";
     if (avatarEl) avatarEl.src = session.avatar || "https://avatars.steamstatic.com/fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb_full.jpg";
+    if (levelEl) levelEl.textContent = session.level ? `LVL ${session.level}` : "LVL 1";
   } else {
     if (profileArea) profileArea.style.display = "none";
     if (loginBtn) loginBtn.style.display = "flex";
@@ -991,22 +1002,38 @@ async function loadCommunityFeed() {
   const container = document.getElementById("communityNewsList");
   if (!container) return;
 
-  container.innerHTML = `<div style="padding: 24px; color: var(--steam-text-dim);">Loading community updates...</div>`;
+  container.innerHTML = `<div style="padding: 24px; color: var(--steam-text-dim);">Loading developer patch notes and announcements...</div>`;
 
-  // Fetch news for selected game or top library games
-  const targetAppId = state.selectedGame ? state.selectedGame.appid : 730;
+  const appids = [];
+  if (state.selectedGame) appids.push(state.selectedGame.appid);
+  state.installedGames.forEach((ig) => { if (!appids.includes(ig.appid)) appids.push(ig.appid); });
+  state.games.slice(0, 4).forEach((g) => { if (!appids.includes(g.appid)) appids.push(g.appid); });
+  if (appids.length === 0) appids.push(730, 400, 220);
+
   try {
-    const res = await fetch(`/api/games/${targetAppId}/news`);
-    const data = await res.json();
-    const items = data.news || [];
+    const allNews = [];
+    const targets = appids.slice(0, 4);
 
-    if (items.length === 0) {
+    for (const aid of targets) {
+      try {
+        const res = await fetch(`/api/games/${aid}/news`);
+        if (res.ok) {
+          const data = await res.json();
+          const items = data.news || [];
+          allNews.push(...items);
+        }
+      } catch (e) {}
+    }
+
+    if (allNews.length === 0) {
       container.innerHTML = `<div style="padding: 24px; color: var(--steam-text-dim);">No community news available.</div>`;
       return;
     }
 
+    allNews.sort((a, b) => (b.date || 0) - (a.date || 0));
+
     let html = "";
-    items.forEach((item) => {
+    allNews.slice(0, 8).forEach((item) => {
       const dateStr = item.date ? new Date(item.date * 1000).toLocaleDateString() : "--";
       html += `
         <div class="steam-panel-box">
@@ -1434,10 +1461,41 @@ async function saveSettings(e) {
   }
 }
 
-function openSettingsModal() {
+function toggleMenuDropdown(menuId, event) {
+  if (event) event.stopPropagation();
+  valveSound.playSelect();
+  const menu = document.getElementById(menuId);
+  if (!menu) return;
+
+  const isShown = menu.classList.contains("show");
+  document.querySelectorAll(".dropdown-menu").forEach((m) => m.classList.remove("show"));
+
+  if (!isShown) {
+    menu.classList.add("show");
+    setTimeout(() => {
+      document.addEventListener("click", () => {
+        menu.classList.remove("show");
+      }, { once: true });
+    }, 10);
+  }
+}
+
+function openSettingsModal(defaultTab = "account") {
   valveSound.playModalOpen();
   const modal = document.getElementById("settingsModal");
-  if (modal) modal.style.display = "flex";
+  if (!modal) return;
+
+  const accNameEl = document.getElementById("settingsAccountNameDisplay");
+  if (accNameEl) {
+    if (state.userSession && state.userSession.authenticated) {
+      accNameEl.textContent = `${state.userSession.personaname || state.userSession.account_name} (${state.userSession.steamid || "Steam Guard Authorized"})`;
+    } else {
+      accNameEl.textContent = "Not signed in";
+    }
+  }
+
+  switchSettingsSubtab(defaultTab);
+  modal.style.display = "flex";
 }
 
 function closeSettingsModal() {
@@ -1445,14 +1503,172 @@ function closeSettingsModal() {
   if (modal) modal.style.display = "none";
 }
 
+function switchSettingsSubtab(tabName, btn) {
+  valveSound.playSelect();
+  document.querySelectorAll("#settingsModal .settings-tab-btn").forEach((b) => {
+    b.classList.remove("active");
+  });
+  if (btn) {
+    btn.classList.add("active");
+  } else {
+    const matchingBtn = Array.from(document.querySelectorAll("#settingsModal .settings-tab-btn")).find(
+      (b) => b.textContent.toLowerCase().includes(tabName)
+    );
+    if (matchingBtn) matchingBtn.classList.add("active");
+  }
+
+  const panes = {
+    account: document.getElementById("settingsPaneAccount"),
+    downloads: document.getElementById("settingsPaneDownloads"),
+    storage: document.getElementById("settingsPaneStorage"),
+    goldberg: document.getElementById("settingsPaneGoldberg"),
+    interface: document.getElementById("settingsPaneInterface"),
+  };
+
+  Object.keys(panes).forEach((key) => {
+    if (panes[key]) panes[key].style.display = key === tabName ? "flex" : "none";
+  });
+}
+
+function switchLoginAuthMode(mode) {
+  valveSound.playSelect();
+  const tabQr = document.getElementById("loginTabQrBtn");
+  const tabCreds = document.getElementById("loginTabCredsBtn");
+  const modeQr = document.getElementById("loginModeQr");
+  const modeCreds = document.getElementById("loginModeCreds");
+
+  if (mode === "creds") {
+    if (tabQr) tabQr.classList.remove("active");
+    if (tabCreds) tabCreds.classList.add("active");
+    if (modeQr) modeQr.style.display = "none";
+    if (modeCreds) modeCreds.style.display = "flex";
+  } else {
+    if (tabQr) tabQr.classList.add("active");
+    if (tabCreds) tabCreds.classList.remove("active");
+    if (modeQr) modeQr.style.display = "flex";
+    if (modeCreds) modeCreds.style.display = "none";
+    startQrAuthSession();
+  }
+}
+
+async function submitCredentialsLogin(e) {
+  if (e) e.preventDefault();
+  valveSound.playSelect();
+
+  const user = document.getElementById("loginUsername")?.value.trim();
+  const pass = document.getElementById("loginPassword")?.value;
+  const code = document.getElementById("login2faCode")?.value.trim();
+  const statusEl = document.getElementById("loginCredsStatus");
+  const submitBtn = document.getElementById("loginCredsSubmitBtn");
+
+  if (!user || !pass) {
+    if (statusEl) statusEl.textContent = "Please enter both username and password.";
+    return;
+  }
+
+  if (statusEl) statusEl.textContent = "Logging into SteamCMD session...";
+  if (submitBtn) submitBtn.disabled = true;
+
+  try {
+    let res;
+    if (code) {
+      res = await fetch("/api/auth/steamcmd/2fa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+    } else {
+      res = await fetch("/api/auth/steamcmd/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: user, password: pass }),
+      });
+    }
+    const data = await res.json();
+    if (data.status === "requires_2fa") {
+      const group2fa = document.getElementById("login2faGroup");
+      if (group2fa) group2fa.style.display = "block";
+      if (statusEl) statusEl.textContent = "Steam Guard code required. Check your Steam Mobile app or Email.";
+      showToast("Steam Guard 2FA code required.", "info");
+    } else if (data.status === "authorized" || data.authenticated) {
+      valveSound.playSuccess();
+      showToast("Successfully logged into Steam!", "success");
+      closeQrLoginModal();
+      await checkUserSession();
+      await loadGamesLibrary();
+    } else {
+      if (statusEl) statusEl.textContent = data.message || "Failed to log in. Check credentials.";
+      showToast(data.message || "Login failed.", "error");
+    }
+  } catch (err) {
+    if (statusEl) statusEl.textContent = "Error communicating with server.";
+    showToast("Server error during login.", "error");
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+function openAboutModal() {
+  valveSound.playModalOpen();
+  const modal = document.getElementById("aboutModal");
+  if (modal) modal.style.display = "flex";
+}
+
+function closeAboutModal() {
+  const modal = document.getElementById("aboutModal");
+  if (modal) modal.style.display = "none";
+}
+
+async function loadStoreFeatured() {
+  const grid = document.getElementById("storeSearchResultsGrid");
+  if (!grid) return;
+  grid.innerHTML = `<div style="padding: 24px; color: var(--steam-text-dim);">Loading featured Steam Store titles...</div>`;
+
+  try {
+    const res = await fetch("/api/store/featured");
+    const data = await res.json();
+    const results = data.results || [];
+
+    if (results.length === 0) {
+      grid.innerHTML = `<div style="padding: 24px; color: var(--steam-text-dim);">Ready to search Steam Store. Type any title above.</div>`;
+      return;
+    }
+
+    let html = "";
+    results.forEach((item) => {
+      html += `
+        <div class="game-capsule-card" style="aspect-ratio: 16/9; max-width: 340px;">
+          <img class="capsule-artwork" src="${item.header_url}" loading="lazy">
+          <div class="capsule-overlay" style="opacity: 1; background: linear-gradient(to top, rgba(0,0,0,0.95), transparent);">
+            <div class="capsule-title">${escapeHtml(item.name)}</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+              <span style="font-size: 11px; color: var(--steam-blue-light); font-weight: 700;">${item.price > 0 ? "$" + item.price.toFixed(2) : "Free to Play"}</span>
+              <button class="btn-steam-green" style="padding: 5px 12px; font-size: 11px;" onclick="queueStoreGame(${item.appid}, '${escapeHtml(item.name)}')">
+                Download to NAS
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+    grid.innerHTML = html;
+  } catch (e) {
+    grid.innerHTML = `<div style="padding: 24px; color: var(--steam-text-dim);">Ready to search Steam Store. Type a game title above.</div>`;
+  }
+}
+
 async function checkUpdates(force = false) {
   try {
     const res = await fetch(`/api/system/update/check?force=${force}`);
     const data = await res.json();
     if (data.update_available) {
-      showToast("A new container release is available!", "info");
+      showToast("A new container release is available! Recreate container to update.", "info");
+    } else if (force) {
+      showToast("VaporFetch Client is up to date (v2.0.0).", "info");
     }
-  } catch (e) {}
+  } catch (e) {
+    if (force) showToast("Could not check for updates.", "error");
+  }
 }
 
 // ==========================================================================
@@ -1512,15 +1728,32 @@ function setupEventListeners() {
     consoleInput.addEventListener("keydown", executeConsoleInput);
   }
 
-  // Keyboard shortcut: ESC to exit Steam Deck / Big Picture Mode
+  // Keyboard navigation & shortcuts
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      if (state.bigPictureMode) {
+    if (state.bigPictureMode) {
+      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+        const cards = Array.from(document.querySelectorAll("#deckHomeCarousel .deck-game-card"));
+        if (cards.length > 0) {
+          const activeIdx = cards.indexOf(document.activeElement);
+          let nextIdx = 0;
+          if (activeIdx !== -1) {
+            nextIdx = e.key === "ArrowRight" ? Math.min(activeIdx + 1, cards.length - 1) : Math.max(activeIdx - 1, 0);
+          }
+          cards[nextIdx].focus();
+          cards[nextIdx].scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+          valveSound.playHover();
+        }
+      } else if (e.key === "Enter" && document.activeElement && document.activeElement.classList.contains("deck-game-card")) {
+        document.activeElement.click();
+      } else if (e.key === "Escape") {
         toggleBigPictureMode();
-      } else {
+      }
+    } else {
+      if (e.key === "Escape") {
         closeSettingsModal();
         closeGamePropertiesModal();
         closeQrLoginModal();
+        closeAboutModal();
       }
     }
   });

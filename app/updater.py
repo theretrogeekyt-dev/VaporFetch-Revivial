@@ -11,7 +11,7 @@ from app.config import DATA_DIR, APP_VERSION, APP_COMMIT_SHA, DOCKER_SOCKET_PATH
 
 UPDATE_CACHE_FILE = DATA_DIR / "update_cache.json"
 CACHE_TTL_SECONDS = 3600
-GITHUB_API_URL = "https://api.github.com/repos/theretrogeekyt-dev/VaporFetch/commits/main"
+GITHUB_API_URL = "https://api.github.com/repos/theretrogeekyt-dev/VaporFetch-Revivial/commits/main"
 
 class DockerUnixClient:
     """Lightweight Docker Engine API client communicating over Unix socket."""
@@ -148,7 +148,7 @@ class ContainerUpdater:
         latest_sha = ""
         commit_message = ""
         commit_date = ""
-        commit_url = "https://github.com/theretrogeekyt-dev/VaporFetch/commits/main"
+        commit_url = "https://github.com/theretrogeekyt-dev/VaporFetch-Revivial/commits/main"
 
         try:
             req = urllib.request.Request(
@@ -219,7 +219,7 @@ class ContainerUpdater:
         container_name = self.docker.find_container_name()
         loop = asyncio.get_running_loop()
         def do_update():
-            self.docker.pull_image("ghcr.io/theretrogeekyt-dev/vaporfetch", "latest", timeout=120)
+            self.docker.pull_image("ghcr.io/theretrogeekyt-dev/vaporfetch-revivial", "latest", timeout=120)
             return self.docker.trigger_watchtower_recreate(container_name)
 
         success = await loop.run_in_executor(None, do_update)

@@ -90,7 +90,11 @@ class SettingsUpdateRequest(BaseModel):
 async def serve_index():
     index_file = STATIC_DIR / "index.html"
     if index_file.exists():
-        return HTMLResponse(content=index_file.read_text(encoding="utf-8"))
+        response = HTMLResponse(content=index_file.read_text(encoding="utf-8"))
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     return HTMLResponse("<h1>VaporFetch is initializing...</h1>")
 
 # ---------------- Authentication Endpoints ---------------- #
@@ -267,6 +271,11 @@ async def get_app_news(appid: int):
 @app.get("/api/store/search")
 async def search_store(q: str):
     results = await steam_api_client.search_store(q)
+    return {"count": len(results), "results": results}
+
+@app.get("/api/store/featured")
+async def get_featured_store():
+    results = await steam_api_client.get_featured_store()
     return {"count": len(results), "results": results}
 
 # ---------------- Queue & Downloader Endpoints ---------------- #

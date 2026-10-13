@@ -261,5 +261,34 @@ class SteamApiClient:
             print(f"[SteamAPI] Store search error: {e}")
         return []
 
+    async def get_featured_store(self) -> List[Dict[str, Any]]:
+        """Fetches featured, trending, and popular games from Steam Store API."""
+        url = f"{STEAM_STORE_BASE}/api/featured/"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.get(url, params={"cc": "US", "l": "en"})
+                if res.status_code == 200:
+                    data = res.json()
+                    featured_items = data.get("featured_win", []) + data.get("large_capsules", [])
+                    results = []
+                    seen = set()
+                    for item in featured_items:
+                        aid = item.get("id")
+                        if aid and aid not in seen:
+                            seen.add(aid)
+                            price = item.get("final_price", 0) / 100 if item.get("final_price") else 0
+                            results.append({
+                                "appid": aid,
+                                "name": item.get("name", f"App {aid}"),
+                                "price": price,
+                                "header_url": item.get("header_image") or f"https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/{aid}/header.jpg",
+                                "capsule_url": f"https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/{aid}/library_600x900.jpg",
+                                "discount_percent": item.get("discount_percent", 0),
+                            })
+                    return results[:24]
+        except Exception as e:
+            print(f"[SteamAPI] Error fetching featured games: {e}")
+        return []
+
 steam_api_client = SteamApiClient()
 

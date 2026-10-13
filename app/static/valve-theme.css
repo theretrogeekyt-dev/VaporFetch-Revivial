@@ -135,6 +135,11 @@ body {
   position: relative;
 }
 
+.menu-item-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
 .menu-button {
   background: transparent;
   border: none;
@@ -1648,6 +1653,18 @@ body {
   color: var(--steam-text-bright);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
+}
+
+.settings-content-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: fadeInPane 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeInPane {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 
