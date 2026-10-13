@@ -505,6 +505,70 @@ async function renderHeroGameView(game) {
   checkGoldbergStatusForHero(game.appid);
 }
 
+async function handleHeroInstallClick(appid) {
+  valveSound.playSelect();
+  if (!appid && state.selectedGame) {
+    appid = state.selectedGame.appid;
+  }
+  if (!appid) return;
+
+  const game = state.games.find((g) => g.appid === appid) ||
+               state.installedGames.find((g) => g.appid === appid) ||
+               (state.selectedGame && state.selectedGame.appid === appid ? state.selectedGame : null);
+
+  const gameName = game ? game.name : `App ${appid}`;
+
+  const isDownloading = state.activeDownloadItem && state.activeDownloadItem.appid === appid;
+  const isQueued = state.queue.items.some((qi) => qi.appid === appid && (qi.status === "queued" || qi.status === "running"));
+
+  if (isDownloading || isQueued) {
+    showToast(`'${gameName}' is already in the download queue.`, "info");
+    switchTab("downloads");
+    return;
+  }
+
+  const isInstalled = state.installedGames.some((ig) => ig.appid === appid);
+  if (isInstalled) {
+    const shouldRedownload = confirm(`'${gameName}' is already installed on your NAS.\n\nDo you want to re-download and verify files?`);
+    if (!shouldRedownload) {
+      switchHeroSubTab("files");
+      return;
+    }
+  }
+
+  const requireGoldberg = document.getElementById("batchRequireGoldbergCheck")?.checked || false;
+
+  try {
+    const res = await fetch("/api/queue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        games: [{
+          appid: appid,
+          name: gameName,
+          header_url: game?.header_url || `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appid}/header.jpg`,
+          capsule_url: game?.capsule_url || `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appid}/library_600x900.jpg`,
+        }],
+        require_goldberg: requireGoldberg,
+      }),
+    });
+
+    if (res.ok) {
+      valveSound.playComplete();
+      showToast(`Added '${gameName}' to download queue!`, "success");
+      if (state.selectedGame && state.selectedGame.appid === appid) {
+        renderHeroGameView(state.selectedGame);
+      }
+      switchTab("downloads");
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast(err.detail || "Failed to add game to download queue.", "error");
+    }
+  } catch (err) {
+    showToast("Error connecting to queue.", "error");
+  }
+}
+
 function switchHeroSubTab(tabName) {
   state.currentHeroSubTab = tabName;
   valveSound.playSelect();
@@ -584,6 +648,8 @@ function renderGridView() {
   state.filteredGames.forEach((game) => {
     const isChecked = state.batchSelectedAppIds.has(game.appid);
     const playtimeHrs = (game.playtime_forever / 60).toFixed(1);
+    const isInstalled = state.installedGames.some((ig) => ig.appid === game.appid);
+    const isQueued = state.queue.items.some((qi) => qi.appid === game.appid && (qi.status === "queued" || qi.status === "running"));
     html += `
       <div class="game-capsule-card" onclick="selectGame(${game.appid}); setLibraryViewMode('hero');">
         <input type="checkbox" class="capsule-checkbox" ${isChecked ? "checked" : ""} onclick="event.stopPropagation(); toggleBatchSelect(${game.appid});">
@@ -591,6 +657,11 @@ function renderGridView() {
         <div class="capsule-overlay">
           <div class="capsule-title">${escapeHtml(game.name)}</div>
           <div class="capsule-subtext">${playtimeHrs} hrs played</div>
+          <div style="margin-top: 8px;">
+            <button class="btn-steam-green" style="padding: 3px 10px; font-size: 11px;" onclick="event.stopPropagation(); handleHeroInstallClick(${game.appid});">
+              ${isQueued ? "Queued" : isInstalled ? "Installed" : "Download"}
+            </button>
+          </div>
         </div>
       </div>
     `;
@@ -614,6 +685,7 @@ function renderListView() {
 
   state.filteredGames.forEach((game) => {
     const isInstalled = installedAppIds.has(game.appid);
+    const isQueued = state.queue.items.some((qi) => qi.appid === game.appid && (qi.status === "queued" || qi.status === "running"));
     const playtimeHrs = (game.playtime_forever / 60).toFixed(1);
     html += `
       <div class="queue-row" onclick="selectGame(${game.appid}); setLibraryViewMode('hero');" style="cursor: pointer;">
@@ -623,7 +695,12 @@ function renderListView() {
         </div>
         <div class="queue-col-status">${playtimeHrs} hrs played</div>
         <div class="queue-col-status" style="color: ${isInstalled ? "var(--steam-in-game-green)" : "var(--steam-text-dim)"}">
-          ${isInstalled ? "Installed on NAS" : "Uninstalled"}
+          ${isInstalled ? "Installed on NAS" : isQueued ? "Queued in Batch" : "Uninstalled"}
+        </div>
+        <div class="queue-col-actions" onclick="event.stopPropagation();">
+          <button class="menu-button" style="padding: 3px 10px; font-size: 11px; color: ${isInstalled ? 'var(--steam-text-dim)' : 'var(--steam-blue-light)'};" onclick="handleHeroInstallClick(${game.appid})">
+            ${isQueued ? "Queued" : isInstalled ? "Verify" : "Download"}
+          </button>
         </div>
       </div>
     `;
@@ -1399,7 +1476,7 @@ function renderBigPictureCarousel() {
   displayGames.forEach((game) => {
     const playtimeHrs = (game.playtime_forever / 60).toFixed(1);
     html += `
-      <div class="deck-game-card" tabindex="0" onclick="selectGame(${game.appid}); toggleBigPictureMode();">
+      <div class="deck-game-card" tabindex="0" data-appid="${game.appid}" onclick="selectGame(${game.appid}); toggleBigPictureMode();">
         <img class="deck-card-banner" src="${game.header_url || game.capsule_url}">
         <div class="deck-card-info">
           <div class="deck-card-title">${escapeHtml(game.name)}</div>
@@ -1745,6 +1822,9 @@ function setupEventListeners() {
         }
       } else if (e.key === "Enter" && document.activeElement && document.activeElement.classList.contains("deck-game-card")) {
         document.activeElement.click();
+      } else if ((e.key === "x" || e.key === "X") && document.activeElement && document.activeElement.classList.contains("deck-game-card")) {
+        const aid = parseInt(document.activeElement.dataset.appid, 10);
+        if (aid) handleHeroInstallClick(aid);
       } else if (e.key === "Escape") {
         toggleBigPictureMode();
       }
