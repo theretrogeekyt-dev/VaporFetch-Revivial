@@ -213,6 +213,14 @@ async def cancel_steamcmd_auth():
     steamcmd_auth_manager.cancel()
     return {"success": True}
 
+@app.post("/api/auth/steamcmd/login")
+async def steamcmd_login_alias(req: SteamCmdAuthRequest):
+    return await start_steamcmd_auth(req)
+
+@app.post("/api/auth/steamcmd/2fa")
+async def steamcmd_2fa_alias(req: SteamCmdCodeRequest):
+    return await submit_steamcmd_code(req)
+
 # ---------------- Library & Storefront Endpoints ---------------- #
 
 @app.get("/api/games")

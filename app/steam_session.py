@@ -235,11 +235,27 @@ class SteamCmdSessionWorker:
                     sync_steam_credentials()
                     return True
 
+                elif "cached credentials not found" in lower_line:
+                    self.state = "error"
+                    self.status_message = f"No cached credentials found for '{clean_user}'. Please log in with your Steam password once to authorize this device."
+                    if log_callback:
+                        log_callback(f">> {self.status_message}")
+                    await self.terminate_session()
+                    raise RuntimeError(self.status_message)
+
                 elif "invalid password" in lower_line:
                     self.state = "error"
                     self.status_message = "Invalid Steam password."
                     await self.terminate_session()
                     raise ValueError(self.status_message)
+
+                elif "password:" in lower_line or "enter password" in lower_line:
+                    self.state = "error"
+                    self.status_message = f"Steam password required for '{clean_user}'."
+                    if log_callback:
+                        log_callback(f">> {self.status_message}")
+                    await self.terminate_session()
+                    raise RuntimeError(self.status_message)
 
                 elif "failed with result code" in lower_line or "failed (account logon denied)" in lower_line:
                     self.state = "error"

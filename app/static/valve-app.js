@@ -1662,21 +1662,50 @@ async function submitCredentialsLogin(e) {
       });
     }
     const data = await res.json();
-    if (data.status === "requires_2fa") {
-      const group2fa = document.getElementById("login2faGroup");
-      if (group2fa) group2fa.style.display = "block";
-      if (statusEl) statusEl.textContent = "Steam Guard code required. Check your Steam Mobile app or Email.";
-      showToast("Steam Guard 2FA code required.", "info");
-    } else if (data.status === "authorized" || data.authenticated) {
+    if (data.authorized || data.state === "success" || data.authenticated) {
       valveSound.playSuccess();
       showToast("Successfully logged into Steam!", "success");
       closeQrLoginModal();
       await checkUserSession();
       await loadGamesLibrary();
-    } else {
-      if (statusEl) statusEl.textContent = data.message || "Failed to log in. Check credentials.";
-      showToast(data.message || "Login failed.", "error");
+    } else if (data.state === "waiting_code" || data.status === "requires_2fa") {
+      const group2fa = document.getElementById("login2faGroup");
+      if (group2fa) group2fa.style.display = "block";
+      if (statusEl) statusEl.textContent = "Steam Guard code required. Enter code above.";
+      showToast("Steam Guard 2FA code required.", "info");
+    } else if (data.state === "waiting_approval") {
+      if (statusEl) statusEl.textContent = "Steam Guard prompt sent! Tap 'Approve' on your Steam Mobile app.";
+      showToast("Tap 'Approve' on your Steam Mobile app.", "info");
     }
+
+    // Polling loop for mobile approval / 2FA completion
+    let pollCount = 0;
+    const pollInterval = setInterval(async () => {
+      pollCount++;
+      if (pollCount > 45) {
+        clearInterval(pollInterval);
+        if (submitBtn) submitBtn.disabled = false;
+        return;
+      }
+      try {
+        const statRes = await fetch("/api/auth/steamcmd/status");
+        const stat = await statRes.json();
+        if (stat.authorized || stat.state === "success") {
+          clearInterval(pollInterval);
+          valveSound.playSuccess();
+          showToast("Steam device authorized successfully!", "success");
+          closeQrLoginModal();
+          await checkUserSession();
+          await loadGamesLibrary();
+        } else if (stat.state === "waiting_approval") {
+          if (statusEl) statusEl.textContent = "Steam Guard prompt sent! Tap 'Approve' on your Steam Mobile app.";
+        } else if (stat.state === "waiting_code") {
+          const group2fa = document.getElementById("login2faGroup");
+          if (group2fa) group2fa.style.display = "block";
+          if (statusEl) statusEl.textContent = "Enter your Steam Guard 2FA code from Mobile or Email.";
+        }
+      } catch (e) {}
+    }, 2000);
   } catch (err) {
     if (statusEl) statusEl.textContent = "Error communicating with server.";
     showToast("Server error during login.", "error");
