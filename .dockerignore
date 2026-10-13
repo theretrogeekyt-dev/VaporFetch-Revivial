@@ -1,0 +1,14 @@
+.git
+.github
+data
+downloads
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv
+.DS_Store
+Thumbs.db
+*.log
+scratch

@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>VaporFetch — Steam NAS Client</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2250%22 fill=%22%23171a21%22/><circle cx=%2250%22 cy=%2250%22 r=%2238%22 fill=%22none%22 stroke=%22%2366c0f4%22 stroke-width=%228%22/><path d=%22M25 50h50%22 stroke=%22%2366c0f4%22 stroke-width=%228%22/></svg>">
+  
+  <link rel="stylesheet" href="/static/valve-theme.css">
+  <link rel="stylesheet" href="/static/steam-deck.css">
+</head>
+<body>
+
+  <!-- Top Valve Window Frame & Navigation Chrome -->
+  <header class="steam-client-chrome">
+    <!-- Row 1: System Titlebar & Menus -->
+    <div class="chrome-titlebar">
+      <div class="titlebar-left">
+        <div class="valve-logo" onclick="switchTab('library')">
+          <svg class="valve-icon" viewBox="0 0 24 24">
+            <path d="M12 2C6.48 2 2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15.2l-2.4-1.2v-.03c-.34-.17-.6-.46-.73-.83L2.24 11.2C2.08 11.46 2 11.72 2 12c0 5.52 4.48 10 10 10s10-4.48 10-10S17.52 2 12 2zm3.3 14.1c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+          </svg>
+          <span>STEAM</span>
+        </div>
+
+        <nav class="steam-menubar">
+          <button class="menu-button" onclick="openSettingsModal()">Steam</button>
+          <button class="menu-button" onclick="switchTab('library')">View</button>
+          <button class="menu-button" onclick="openQrLoginModal()">Friends</button>
+          <button class="menu-button" onclick="switchTab('downloads')">Games</button>
+          <button class="menu-button" onclick="openSettingsModal()">Help</button>
+        </nav>
+      </div>
+
+      <div class="titlebar-right">
+        <div class="nas-indicator">
+          <span>● NAS MOUNTED:</span>
+          <span id="storageNavText">-- GB Free</span>
+        </div>
+        <div class="window-controls">
+          <button class="window-btn" title="Minimize">—</button>
+          <button class="window-btn" title="Maximize">□</button>
+          <button class="window-btn" title="Close" onclick="logout()">✕</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 2: Steam Client Navigation Tabs -->
+    <div class="chrome-navbar">
+      <nav class="nav-tabs-group">
+        <button class="nav-tab" data-tab="store">Store</button>
+        <button class="nav-tab active" data-tab="library">Library</button>
+        <button class="nav-tab" data-tab="community">Community</button>
+        <button class="nav-tab" data-tab="downloads">
+          Downloads
+          <span id="queueCountBadge" class="tab-counter" style="display: none;">0</span>
+        </button>
+        <button class="nav-tab" data-tab="storage">Storage</button>
+      </nav>
+
+      <div class="nav-utilities">
+        <!-- Big Picture Mode Toggle -->
+        <button class="btn-bigpicture" onclick="toggleBigPictureMode()" title="Toggle Steam Deck / Big Picture Mode">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+            <rect x="2" y="6" width="20" height="12" rx="3" fill="none" stroke="currentColor" stroke-width="2"/>
+            <circle cx="7" cy="12" r="2"/>
+            <circle cx="17" cy="12" r="1.5"/>
+          </svg>
+          <span>Big Picture</span>
+        </button>
+
+        <!-- Sound FX Mute Toggle -->
+        <button class="utility-icon-btn" id="soundToggleBtn" onclick="valveSound.toggleMute(); showToast(valveSound.isMuted() ? 'Sound muted.' : 'Sound unmuted.');" title="Toggle Valve UI Sounds">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+            <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+          </svg>
+        </button>
+
+        <!-- Settings Cog -->
+        <button class="utility-icon-btn" onclick="openSettingsModal()" title="Steam Settings">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+
+        <!-- User Profile Pill -->
+        <div id="userProfileCapsule" class="user-profile-capsule" onclick="logout()" title="Click to log out" style="display: none;">
+          <div class="avatar-wrapper">
+            <img id="profileAvatarImg" class="avatar-img" src="" alt="Avatar">
+            <div class="avatar-status-ring"></div>
+          </div>
+          <div class="user-text-group">
+            <span id="profilePersonaName" class="profile-persona">Steam User</span>
+            <span class="profile-status">Online</span>
+          </div>
+          <span class="steam-level-badge">LVL 42</span>
+        </div>
+
+        <button id="navLoginBtn" class="btn-steam-green" style="padding: 6px 14px; font-size: 12px;" onclick="openQrLoginModal()">
+          Sign In
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Application Viewport -->
+  <main class="steam-viewport">
+
+    <!-- ==================== VIEW 1: STEAM LIBRARY ==================== -->
+    <section id="view-library" class="view-section active">
+      <div class="library-container">
+        <!-- Sidebar Navigation -->
+        <aside class="library-sidebar">
+          <div class="sidebar-search-header">
+            <div class="steam-search-bar">
+              <svg class="search-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input type="text" id="librarySearchInput" class="steam-search-input" placeholder="Search by title or AppID...">
+            </div>
+            <div class="filter-pills-row">
+              <button class="filter-pill active" onclick="setLibraryFilter('all', this)">All</button>
+              <button class="filter-pill" onclick="setLibraryFilter('installed', this)">Installed on NAS</button>
+              <button class="filter-pill" onclick="setLibraryFilter('favorites', this)">Favorites</button>
+            </div>
+          </div>
+
+          <div id="sidebarGameList" class="sidebar-game-list"></div>
+        </aside>
+
+        <!-- Right Main Pane (Game Detail Hero View) -->
+        <section id="libraryMainPane" class="library-main-pane"></section>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 2: DOWNLOADS MANAGER ==================== -->
+    <section id="view-downloads" class="view-section">
+      <div class="downloads-viewport">
+        <!-- Active Download Hero Card -->
+        <div id="activeDownloadHero" class="active-download-hero" style="display: none;">
+          <div class="hero-download-top">
+            <img id="activeHeroBanner" class="download-game-banner" src="" alt="Banner">
+            <div class="download-meta-column">
+              <div class="download-title-row">
+                <h2 id="activeHeroTitle" class="download-title">Game Title</h2>
+                <span id="activeHeroStage" class="download-stage-badge">Downloading</span>
+              </div>
+              <div style="color: var(--steam-text-secondary); font-size: 13px;">
+                Sequential batch download running via persistent SteamCMD session.
+              </div>
+            </div>
+          </div>
+
+          <!-- Real-Time Dual-Speed Chart (Network Download & Disk Write) -->
+          <div class="dual-speed-chart-wrapper">
+            <div class="chart-legend">
+              <div class="legend-item">
+                <span class="legend-color-net"></span>
+                <span>Network Rate</span>
+              </div>
+              <div class="legend-item">
+                <span class="legend-color-disk"></span>
+                <span>Disk Activity</span>
+              </div>
+            </div>
+            <canvas id="speedCanvas"></canvas>
+          </div>
+
+          <!-- Live Telemetry Stats -->
+          <div class="telemetry-stats-bar">
+            <div class="telemetry-cell">
+              <span class="telemetry-label">Network Speed</span>
+              <span id="telemetrySpeed" class="telemetry-value accent-speed">0.0 MB/s</span>
+            </div>
+            <div class="telemetry-cell">
+              <span class="telemetry-label">Progress</span>
+              <span id="telemetryProgress" class="telemetry-value">0.0%</span>
+            </div>
+            <div class="telemetry-cell">
+              <span class="telemetry-label">Downloaded</span>
+              <span id="telemetryDownloaded" class="telemetry-value">0 GB / 0 GB</span>
+            </div>
+            <div class="telemetry-cell">
+              <span class="telemetry-label">Time Remaining</span>
+              <span id="telemetryEta" class="telemetry-value">--</span>
+            </div>
+            <div class="telemetry-cell">
+              <span class="telemetry-label">Control</span>
+              <button class="menu-button" style="color: var(--steam-red); padding: 4px 8px; margin-top: 4px;" onclick="cancelActiveDownload()">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Upcoming Queue Table -->
+        <div class="queue-table-container">
+          <div class="queue-section-header">
+            <span>Upcoming Queue Priority</span>
+            <button class="menu-button" onclick="clearCompletedQueue()">Clear History</button>
+          </div>
+          <div id="upcomingQueueTable"></div>
+        </div>
+
+        <!-- SteamCMD Developer Terminal Console -->
+        <div class="steamcmd-console-drawer">
+          <div class="console-topbar">
+            <span>SteamCMD Live Terminal Stream</span>
+            <button class="menu-button" onclick="clearConsoleLog()">Clear Log</button>
+          </div>
+          <div id="consoleTerminal" class="console-terminal"></div>
+          <div class="console-input-row">
+            <span class="console-prompt-symbol">Steam&gt;</span>
+            <input type="text" id="consoleCommandInput" class="console-input" placeholder="Type SteamCMD command and press Enter (e.g. status, app_status 730)...">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 3: STORAGE & NAS ==================== -->
+    <section id="view-storage" class="view-section">
+      <div class="storage-viewport">
+        <div class="storage-visual-bar-card">
+          <h2 style="font-size: 18px; font-weight: 800; color: #fff;">Mounted NAS Storage (/downloads)</h2>
+          <div class="storage-bar-outer">
+            <div id="storageBarUsed" class="bar-segment-games" style="width: 0%;"></div>
+            <div class="bar-segment-free" style="flex: 1;"></div>
+          </div>
+          <div id="storageDetailText" style="font-size: 13px; color: var(--steam-text-secondary);">
+            Loading disk allocation...
+          </div>
+        </div>
+
+        <div class="queue-table-container">
+          <div class="queue-section-header">
+            <span>Downloaded Games on NAS</span>
+            <button class="menu-button" onclick="loadInstalledGames()">Scan Directory</button>
+          </div>
+          <div id="installedGamesTableBody"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 4: STORE EXPLORER ==================== -->
+    <section id="view-store" class="view-section">
+      <div class="store-viewport">
+        <div style="background: var(--steam-bg-card); padding: 24px; border-radius: 4px; border: 1px solid var(--steam-border);">
+          <h2 style="font-size: 20px; font-weight: 800; color: #fff; margin-bottom: 8px;">Steam Store & Depot Browser</h2>
+          <p style="color: var(--steam-text-secondary); margin-bottom: 16px;">
+            Search any game, depot, or dedicated server tool across the entire Steam store to download directly to your NAS.
+          </p>
+          <div class="steam-search-bar" style="max-width: 500px;">
+            <input type="text" id="storeSearchInput" class="steam-search-input" placeholder="Search Steam titles (e.g. Counter-Strike, Portal, Half-Life)..." onkeydown="if(event.key==='Enter') executeStoreSearch()">
+            <button class="btn-steam-green" style="padding: 6px 16px; font-size: 12px;" onclick="executeStoreSearch()">Search</button>
+          </div>
+        </div>
+
+        <div id="storeSearchResultsGrid" class="library-grid-view"></div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 5: COMMUNITY NEWS ==================== -->
+    <section id="view-community" class="view-section">
+      <div class="store-viewport">
+        <div style="background: var(--steam-bg-card); padding: 24px; border-radius: 4px; border: 1px solid var(--steam-border);">
+          <h2 style="font-size: 20px; font-weight: 800; color: #fff; margin-bottom: 8px;">Steam Community & Developer News</h2>
+          <p style="color: var(--steam-text-secondary);">
+            Live updates, announcements, and release patch notes from game developers.
+          </p>
+        </div>
+        <div id="communityNewsList" style="display: flex; flex-direction: column; gap: 16px;"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== STEAM GUARD LOGIN DIALOG ==================== -->
+  <div id="qrLoginModal" class="modal-backdrop" style="display: none;" onclick="if(event.target===this) closeQrLoginModal()">
+    <div class="valve-modal-dialog" style="max-width: 440px;">
+      <div class="modal-dialog-header">
+        <span class="dialog-title">Sign in to Steam</span>
+        <button class="modal-close-btn" onclick="closeQrLoginModal()">&times;</button>
+      </div>
+
+      <div class="qr-login-container">
+        <div class="qr-radar-box">
+          <img id="qrCodeImage" class="qr-code-img" src="" alt="Steam Guard QR">
+          <div class="qr-sweep-line"></div>
+        </div>
+
+        <div>
+          <h3 style="font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 6px;">Steam Guard Sign-in</h3>
+          <p style="font-size: 12px; color: var(--steam-text-secondary); line-height: 1.5;">
+            1. Open the <strong>Steam Mobile App</strong><br>
+            2. Tap the Steam Guard scanner icon<br>
+            3. Point your camera at this QR code to authorize
+          </p>
+        </div>
+
+        <div id="qrStatusMessage" style="font-size: 12px; color: var(--steam-blue-light); font-weight: 600;">
+          Waiting for Steam Mobile approval...
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== STEAM SETTINGS DIALOG ==================== -->
+  <div id="settingsModal" class="modal-backdrop" style="display: none;" onclick="if(event.target===this) closeSettingsModal()">
+    <div class="valve-modal-dialog">
+      <div class="modal-dialog-header">
+        <span class="dialog-title">Steam Settings</span>
+        <button class="modal-close-btn" onclick="closeSettingsModal()">&times;</button>
+      </div>
+
+      <div class="settings-dialog-layout">
+        <aside class="settings-sidebar">
+          <button class="settings-tab-btn active">Account</button>
+          <button class="settings-tab-btn">Downloads</button>
+          <button class="settings-tab-btn">Storage & NAS</button>
+          <button class="settings-tab-btn">Offline Wrapper</button>
+          <button class="settings-tab-btn">Interface</button>
+        </aside>
+
+        <form class="settings-body-pane" onsubmit="saveSettings(event)">
+          <div class="form-group">
+            <label class="form-label" for="cfgSteamApiKey">Steam Web API Key</label>
+            <input type="text" id="cfgSteamApiKey" class="form-input" placeholder="32-character hexadecimal key">
+            <span class="form-helper">Required if your profile game library is private.</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="cfgForcePlatform">Depot Platform Architecture</label>
+            <select id="cfgForcePlatform" class="form-select">
+              <option value="windows">Windows (Recommended for Proton/NAS)</option>
+              <option value="linux">Linux (Native Linux binaries)</option>
+              <option value="macos">macOS</option>
+            </select>
+            <span class="form-helper">Forces SteamCMD to fetch Windows game files on Linux.</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">DRM-Free Offline Play (Goldberg)</label>
+            <label style="display: flex; align-items: center; gap: 8px; color: var(--steam-text-bright); cursor: pointer; margin-top: 6px;">
+              <input type="checkbox" id="cfgEnableGoldberg">
+              <span>Auto-apply Goldberg Emulator to downloaded games</span>
+            </label>
+            <span class="form-helper">Replaces steam_api(64).dll so supported games launch offline without the Steam client.</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Audio & Feedback</label>
+            <label style="display: flex; align-items: center; gap: 8px; color: var(--steam-text-bright); cursor: pointer; margin-top: 6px;">
+              <input type="checkbox" id="cfgEnableSound" checked>
+              <span>Enable Valve UI audio cues (ticks, chimes, alerts)</span>
+            </label>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
+            <button type="button" class="btn-steam-action" onclick="closeSettingsModal()">Cancel</button>
+            <button type="submit" class="btn-steam-green" style="padding: 10px 24px; font-size: 13px;">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="steam-toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="/static/valve-sound.js"></script>
+  <script src="/static/valve-app.js"></script>
+</body>
+</html>
