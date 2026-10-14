@@ -430,6 +430,38 @@
     </div>
   </div>
 
+  <!-- ==================== STEAMCMD DEVICE AUTHORIZATION MODAL ==================== -->
+  <div id="steamcmdAuthModal" class="modal-backdrop" style="display: none;" onclick="if(event.target===this) closeSteamcmdAuthModal()">
+    <div class="valve-modal-dialog" style="max-width: 440px;">
+      <div class="modal-dialog-header">
+        <span class="dialog-title">Steam Device Authorization</span>
+        <button class="modal-close-btn" onclick="closeSteamcmdAuthModal()">&times;</button>
+      </div>
+      <form style="padding: 24px; display: flex; flex-direction: column; gap: 14px;" onsubmit="submitSteamCmdDeviceAuth(event)">
+        <p style="font-size: 12px; color: var(--steam-text-secondary); line-height: 1.5;">
+          SteamCMD requires your password once to authorize this NAS and generate permanent machine credentials.
+        </p>
+        <div class="form-group">
+          <label class="form-label" for="deviceAuthUser">Steam Account</label>
+          <input type="text" id="deviceAuthUser" class="form-input" readonly style="background: rgba(0,0,0,0.3); color: var(--steam-blue-light); font-weight: 700;">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="deviceAuthPass">Steam Password</label>
+          <input type="password" id="deviceAuthPass" class="form-input" placeholder="Your Steam password" required autofocus>
+        </div>
+        <div id="deviceAuth2faGroup" class="form-group" style="display: none;">
+          <label class="form-label" for="deviceAuth2faCode">Steam Guard Code (if prompted)</label>
+          <input type="text" id="deviceAuth2faCode" class="form-input" placeholder="5-character code">
+        </div>
+        <div id="deviceAuthStatusMsg" style="font-size: 12px; color: var(--steam-blue-light); min-height: 18px;"></div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px;">
+          <button type="button" class="btn-steam-action" onclick="closeSteamcmdAuthModal()">Cancel</button>
+          <button type="submit" id="deviceAuthSubmitBtn" class="btn-steam-green" style="padding: 8px 20px;">Authorize &amp; Download</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- ==================== STEAM SETTINGS DIALOG ==================== -->
   <div id="settingsModal" class="modal-backdrop" style="display: none;" onclick="if(event.target===this) closeSettingsModal()">
     <div class="valve-modal-dialog">
@@ -458,6 +490,17 @@
               <label class="form-label" for="cfgSteamApiKey">Steam Web API Key</label>
               <input type="text" id="cfgSteamApiKey" class="form-input" placeholder="32-character hexadecimal key">
               <span class="form-helper">Required to fetch your library games if your Steam profile is set to Private.</span>
+            </div>
+            <div class="form-group" style="margin-top: 14px;">
+              <label class="form-label" for="cfgSteamcmdPass">Steam Account Password (for Game Downloads)</label>
+              <input type="password" id="cfgSteamcmdPass" class="form-input" placeholder="Enter Steam password to authorize SteamCMD downloads">
+              <span class="form-helper">SteamCMD requires this once to create your device sentry file on the NAS.</span>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 12px; align-items: center;">
+              <button type="button" class="btn-steam-green" style="padding: 6px 16px; font-size: 12px;" onclick="authorizeSteamCmdFromSettings()">
+                Authorize Device for Downloads
+              </button>
+              <span id="settingsAuthStatusBadge" style="font-size: 12px; font-weight: 600;"></span>
             </div>
             <div style="margin-top: 14px;">
               <button type="button" class="btn-steam-action" onclick="closeSettingsModal(); openQrLoginModal();">Manage Steam Sign-in</button>

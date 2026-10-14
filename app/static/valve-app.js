@@ -532,9 +532,18 @@ async function handleHeroInstallClick(appid) {
     const shouldRedownload = confirm(`'${gameName}' is already installed on your NAS.\n\nDo you want to re-download and verify files?`);
     if (!shouldRedownload) {
       switchHeroSubTab("files");
-      return;
     }
   }
+
+  // Check if SteamCMD machine authorization is required
+  try {
+    const statRes = await fetch("/api/auth/steamcmd/status");
+    const stat = await statRes.json();
+    if (!stat.authorized && !stat.has_password) {
+      openSteamcmdAuthModal(appid);
+      return;
+    }
+  } catch (e) {}
 
   const requireGoldberg = document.getElementById("batchRequireGoldbergCheck")?.checked || false;
 
@@ -1500,11 +1509,27 @@ async function loadSettings() {
     const platformSelect = document.getElementById("cfgForcePlatform");
     const goldbergCheck = document.getElementById("cfgEnableGoldberg");
     const soundCheck = document.getElementById("cfgEnableSound");
+    const passInput = document.getElementById("cfgSteamcmdPass");
+    const badge = document.getElementById("settingsAuthStatusBadge");
 
     if (apiKeyInput) apiKeyInput.value = data.steam_api_key || "";
     if (platformSelect) platformSelect.value = data.force_platform || "windows";
     if (goldbergCheck) goldbergCheck.checked = !!data.enable_goldberg;
     if (soundCheck) soundCheck.checked = data.ui_sound_enabled !== false;
+    if (passInput && data.steamcmd_password) passInput.value = data.steamcmd_password;
+
+    // Check SteamCMD auth status
+    const statRes = await fetch("/api/auth/steamcmd/status");
+    const stat = await statRes.json();
+    if (badge) {
+      if (stat.authorized) {
+        badge.textContent = "✔ Authorized for Downloads";
+        badge.style.color = "var(--steam-in-game-green)";
+      } else {
+        badge.textContent = "⚠ Password Required for Downloads";
+        badge.style.color = "var(--steam-gold)";
+      }
+    }
   } catch (e) {}
 }
 
@@ -1516,17 +1541,23 @@ async function saveSettings(e) {
   const platform = document.getElementById("cfgForcePlatform")?.value;
   const goldberg = document.getElementById("cfgEnableGoldberg")?.checked;
   const sound = document.getElementById("cfgEnableSound")?.checked;
+  const pass = document.getElementById("cfgSteamcmdPass")?.value;
 
   try {
+    const payload = {
+      steam_api_key: apiKey,
+      force_platform: platform,
+      enable_goldberg: goldberg,
+      ui_sound_enabled: sound,
+    };
+    if (pass && pass !== "******") {
+      payload.steamcmd_password = pass;
+    }
+
     const res = await fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        steam_api_key: apiKey,
-        force_platform: platform,
-        enable_goldberg: goldberg,
-        ui_sound_enabled: sound,
-      }),
+      body: JSON.stringify(payload),
     });
     if (res.ok) {
       valveSound.setMute(!sound);
@@ -1535,6 +1566,203 @@ async function saveSettings(e) {
     }
   } catch (err) {
     showToast("Error saving settings.", "error");
+  }
+}
+
+async function authorizeSteamCmdFromSettings() {
+  valveSound.playSelect();
+  const pass = document.getElementById("cfgSteamcmdPass")?.value;
+  const username = (state.userSession && state.userSession.account_name) || "reaper360vr";
+  const badge = document.getElementById("settingsAuthStatusBadge");
+
+  if (!pass) {
+    if (badge) {
+      badge.textContent = "Please enter your Steam password above.";
+      badge.style.color = "var(--steam-red)";
+    }
+    return;
+  }
+
+  if (badge) {
+    badge.textContent = "Connecting to SteamCMD...";
+    badge.style.color = "var(--steam-blue-light)";
+  }
+
+  try {
+    await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ steamcmd_username: username, steamcmd_password: pass }),
+    });
+
+    const res = await fetch("/api/auth/steamcmd/authorize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password: pass }),
+    });
+    const data = await res.json();
+
+    if (data.authorized || data.state === "success") {
+      valveSound.playSuccess();
+      showToast("Device authorized successfully!", "success");
+      if (badge) {
+        badge.textContent = "✔ Authorized for Downloads";
+        badge.style.color = "var(--steam-in-game-green)";
+      }
+      return;
+    }
+
+    if (data.state === "waiting_approval") {
+      if (badge) badge.textContent = "Tap 'Approve' in your Steam Mobile app...";
+      showToast("Tap 'Approve' in your Steam Mobile app.", "info");
+    }
+
+    let count = 0;
+    const interval = setInterval(async () => {
+      count++;
+      if (count > 45) {
+        clearInterval(interval);
+        return;
+      }
+      try {
+        const statRes = await fetch("/api/auth/steamcmd/status");
+        const stat = await statRes.json();
+        if (stat.authorized || stat.state === "success") {
+          clearInterval(interval);
+          valveSound.playSuccess();
+          showToast("Device authorized successfully!", "success");
+          if (badge) {
+            badge.textContent = "✔ Authorized for Downloads";
+            badge.style.color = "var(--steam-in-game-green)";
+          }
+          await checkUserSession();
+        } else if (stat.state === "waiting_approval") {
+          if (badge) badge.textContent = "Tap 'Approve' in your Steam Mobile app...";
+        }
+      } catch (e) {}
+    }, 2000);
+
+  } catch (e) {
+    if (badge) {
+      badge.textContent = "Failed to connect to SteamCMD.";
+      badge.style.color = "var(--steam-red)";
+    }
+  }
+}
+
+function openSteamcmdAuthModal(targetAppId = null) {
+  valveSound.playModalOpen();
+  state.pendingDownloadAppId = targetAppId;
+  const modal = document.getElementById("steamcmdAuthModal");
+  const userField = document.getElementById("deviceAuthUser");
+  const passField = document.getElementById("deviceAuthPass");
+  const statusEl = document.getElementById("deviceAuthStatusMsg");
+
+  const username = (state.userSession && state.userSession.account_name) || "reaper360vr";
+  if (userField) userField.value = username;
+  if (passField) passField.value = "";
+  if (statusEl) statusEl.textContent = "";
+
+  if (modal) modal.style.display = "flex";
+  if (passField) passField.focus();
+}
+
+function closeSteamcmdAuthModal() {
+  const modal = document.getElementById("steamcmdAuthModal");
+  if (modal) modal.style.display = "none";
+}
+
+async function submitSteamCmdDeviceAuth(e) {
+  if (e) e.preventDefault();
+  valveSound.playSelect();
+
+  const user = document.getElementById("deviceAuthUser")?.value.trim();
+  const pass = document.getElementById("deviceAuthPass")?.value;
+  const code = document.getElementById("deviceAuth2faCode")?.value.trim();
+  const statusEl = document.getElementById("deviceAuthStatusMsg");
+  const submitBtn = document.getElementById("deviceAuthSubmitBtn");
+
+  if (!user || !pass) {
+    if (statusEl) statusEl.textContent = "Please enter your Steam password.";
+    return;
+  }
+
+  if (statusEl) statusEl.textContent = "Authorizing SteamCMD on your NAS...";
+  if (submitBtn) submitBtn.disabled = true;
+
+  try {
+    await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ steamcmd_username: user, steamcmd_password: pass }),
+    });
+
+    let res;
+    if (code) {
+      res = await fetch("/api/auth/steamcmd/2fa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+    } else {
+      res = await fetch("/api/auth/steamcmd/authorize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: user, password: pass }),
+      });
+    }
+    const data = await res.json();
+
+    if (data.authorized || data.state === "success") {
+      valveSound.playSuccess();
+      showToast("Device authorized successfully!", "success");
+      closeSteamcmdAuthModal();
+      await checkUserSession();
+      if (state.pendingDownloadAppId) {
+        handleHeroInstallClick(state.pendingDownloadAppId);
+      }
+      return;
+    }
+
+    if (data.state === "waiting_approval") {
+      if (statusEl) statusEl.textContent = "Steam Guard prompt sent! Please tap 'Approve' on your Steam Mobile app.";
+      showToast("Tap 'Approve' on your Steam Mobile app.", "info");
+    } else if (data.state === "waiting_code") {
+      const group2fa = document.getElementById("deviceAuth2faGroup");
+      if (group2fa) group2fa.style.display = "block";
+      if (statusEl) statusEl.textContent = "Enter your Steam Guard 2FA code above.";
+    }
+
+    let count = 0;
+    const interval = setInterval(async () => {
+      count++;
+      if (count > 45) {
+        clearInterval(interval);
+        if (submitBtn) submitBtn.disabled = false;
+        return;
+      }
+      try {
+        const statRes = await fetch("/api/auth/steamcmd/status");
+        const stat = await statRes.json();
+        if (stat.authorized || stat.state === "success") {
+          clearInterval(interval);
+          valveSound.playSuccess();
+          showToast("Device authorized successfully!", "success");
+          closeSteamcmdAuthModal();
+          await checkUserSession();
+          if (state.pendingDownloadAppId) {
+            handleHeroInstallClick(state.pendingDownloadAppId);
+          }
+        } else if (stat.state === "waiting_approval") {
+          if (statusEl) statusEl.textContent = "Steam Guard prompt sent! Tap 'Approve' on your Steam Mobile app.";
+        }
+      } catch (err) {}
+    }, 2000);
+
+  } catch (err) {
+    if (statusEl) statusEl.textContent = "Server error communicating with SteamCMD.";
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
 }
 
@@ -1863,6 +2091,7 @@ function setupEventListeners() {
         closeGamePropertiesModal();
         closeQrLoginModal();
         closeAboutModal();
+        closeSteamcmdAuthModal();
       }
     }
   });
