@@ -387,15 +387,27 @@ async def delete_installed_game(folder_name: str):
 # ---------------- Goldberg Offline Wrapper Endpoints ---------------- #
 
 def _find_game_dir(appid: int) -> Optional[Path]:
+    # 1. Check storage manager's cached installed games
+    for ig in storage_manager._cached_installed_games:
+        if ig.get("appid") == appid:
+            p = Path(ig.get("path", ""))
+            if p.exists() and p.is_dir():
+                return p
+
+    # 2. Check active or historical queue items
     for item in queue_manager.items:
         if item.appid == appid and item.install_dir and Path(item.install_dir).exists():
             return Path(item.install_dir)
+
+    # 3. Search children of DOWNLOAD_DIR
     try:
         if DOWNLOAD_DIR.exists():
             for child in DOWNLOAD_DIR.iterdir():
-                if not child.is_dir():
+                if not child.is_dir() or child.name.startswith("."):
                     continue
                 if (child / f"appmanifest_{appid}.acf").exists():
+                    return child
+                if (child / "steamapps" / f"appmanifest_{appid}.acf").exists():
                     return child
                 appid_file = child / "steam_appid.txt"
                 if appid_file.exists():
@@ -404,15 +416,35 @@ def _find_game_dir(appid: int) -> Optional[Path]:
                             return child
                     except Exception:
                         pass
-    except Exception:
-        pass
+
+            # 4. Check global steamapps manifest
+            global_manifest = DOWNLOAD_DIR / "steamapps" / f"appmanifest_{appid}.acf"
+            if global_manifest.exists():
+                from app.storage import _parse_acf_manifest
+                m_data = _parse_acf_manifest(global_manifest)
+                installdir = m_data.get("installdir", "")
+                if installdir:
+                    candidates = [
+                        DOWNLOAD_DIR / "steamapps" / "common" / installdir,
+                        DOWNLOAD_DIR / installdir,
+                        DOWNLOAD_DIR / "common" / installdir,
+                    ]
+                    for cand in candidates:
+                        if cand.exists() and cand.is_dir():
+                            return cand
+    except Exception as e:
+        print(f"[Main] Error searching game dir for appid {appid}: {e}")
+
     return None
 
 @app.get("/api/games/{appid}/goldberg")
 async def get_goldberg_status(appid: int):
     target_dir = _find_game_dir(appid)
     if not target_dir or not target_dir.exists():
-        raise HTTPException(status_code=404, detail="Game folder not found in /downloads.")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Game folder for AppID {appid} is not installed on NAS."
+        )
     status = goldberg_manager.check_status(target_dir)
     status["install_dir"] = str(target_dir)
     return status
@@ -421,17 +453,25 @@ async def get_goldberg_status(appid: int):
 async def apply_goldberg(appid: int):
     target_dir = _find_game_dir(appid)
     if not target_dir or not target_dir.exists():
-        raise HTTPException(status_code=404, detail="Game folder not found in /downloads.")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Game folder for AppID {appid} is not installed on the NAS. Please download the game first."
+        )
 
     settings = load_settings()
     account_name = settings.get("steamcmd_username") or "Player"
     await goldberg_manager.ensure_binaries()
 
     if not goldberg_manager.is_available():
-        raise HTTPException(status_code=500, detail="Goldberg emulator binaries are not available.")
+        raise HTTPException(status_code=500, detail="Goldberg emulator binaries (steam_api.dll / steam_api64.dll) are not available.")
 
     try:
-        return goldberg_manager.apply(target_dir, appid=appid, account_name=account_name)
+        res = goldberg_manager.apply(target_dir, appid=appid, account_name=account_name)
+        if not res.get("success"):
+            raise HTTPException(status_code=400, detail=res.get("message", "No steam_api DLLs found to patch."))
+        return res
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -439,7 +479,10 @@ async def apply_goldberg(appid: int):
 async def revert_goldberg(appid: int):
     target_dir = _find_game_dir(appid)
     if not target_dir or not target_dir.exists():
-        raise HTTPException(status_code=404, detail="Game folder not found in /downloads.")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Game folder for AppID {appid} is not installed on the NAS."
+        )
 
     try:
         return goldberg_manager.revert(target_dir)

@@ -653,16 +653,26 @@ function renderGridView() {
   const mainPane = document.getElementById("libraryMainPane");
   if (!mainPane) return;
 
-  let html = `<div class="library-grid-view">`;
+  const isBatchMode = state.batchMode || state.batchSelectedAppIds.size > 0;
+  let html = `<div class="library-grid-view ${isBatchMode ? 'batch-active' : ''}">`;
   state.filteredGames.forEach((game) => {
     const isChecked = state.batchSelectedAppIds.has(game.appid);
     const playtimeHrs = (game.playtime_forever / 60).toFixed(1);
     const isInstalled = state.installedGames.some((ig) => ig.appid === game.appid);
     const isQueued = state.queue.items.some((qi) => qi.appid === game.appid && (qi.status === "queued" || qi.status === "running"));
+    const primaryImg = game.capsule_url || game.header_url || "";
+    const fallbackImg = game.header_url || "";
     html += `
       <div class="game-capsule-card" onclick="selectGame(${game.appid}); setLibraryViewMode('hero');">
         <input type="checkbox" class="capsule-checkbox" ${isChecked ? "checked" : ""} onclick="event.stopPropagation(); toggleBatchSelect(${game.appid});">
-        <img class="capsule-artwork" src="${game.capsule_url || game.header_url}" loading="lazy">
+        <img class="capsule-artwork" src="${primaryImg}" loading="lazy" alt="${escapeHtml(game.name)}"
+             onerror="if (this.src !== '${fallbackImg}' && '${fallbackImg}') { this.src = '${fallbackImg}'; } else { this.style.display = 'none'; const ph = this.nextElementSibling; if (ph) ph.style.display = 'flex'; }">
+        <div class="capsule-fallback-placeholder" style="display: none;">
+          <svg class="capsule-fallback-icon" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15.2l-2.4-1.2v-.03c-.34-.17-.6-.46-.73-.83L2.24 11.2C2.08 11.46 2 11.72 2 12c0 5.52 4.48 10 10 10s10-4.48 10-10S17.52 2 12 2zm3.3 14.1c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+          </svg>
+          <div class="capsule-fallback-title">${escapeHtml(game.name)}</div>
+        </div>
         <div class="capsule-overlay">
           <div class="capsule-title">${escapeHtml(game.name)}</div>
           <div class="capsule-subtext">${playtimeHrs} hrs played</div>
@@ -721,7 +731,14 @@ function renderListView() {
 // Batch Select Controls
 function toggleBatchMode() {
   state.batchMode = !state.batchMode;
+  valveSound.playSelect();
+  const toggleBtn = document.getElementById("batchModeToggleBtn");
+  if (toggleBtn) toggleBtn.classList.toggle("active", state.batchMode);
   renderSidebarGames();
+  const gridView = document.querySelector(".library-grid-view");
+  if (gridView) {
+    gridView.classList.toggle("batch-active", state.batchMode || state.batchSelectedAppIds.size > 0);
+  }
   updateBatchBarUI();
 }
 
@@ -733,6 +750,10 @@ function toggleBatchSelect(appid) {
   }
   valveSound.playHover();
   renderSidebarGames();
+  const gridView = document.querySelector(".library-grid-view");
+  if (gridView) {
+    gridView.classList.toggle("batch-active", state.batchMode || state.batchSelectedAppIds.size > 0);
+  }
   updateBatchBarUI();
 }
 
@@ -865,6 +886,8 @@ function openGamePropertiesModal(appid) {
   const pathEl = document.getElementById("propFilePathDisplay");
   const sizeEl = document.getElementById("propFileSizeDisplay");
   const goldbergStatusEl = document.getElementById("propGoldbergStatusDisplay");
+  const btnToggleGoldberg = document.getElementById("propBtnToggleGoldberg");
+  const goldbergNoteEl = document.getElementById("propGoldbergHelpNote");
 
   if (installed) {
     if (pathEl) pathEl.textContent = installed.path || `/downloads/steamapps/common/${installed.folder_name}`;
@@ -874,10 +897,25 @@ function openGamePropertiesModal(appid) {
         ? '<span style="color: var(--steam-gold); font-weight: 700;">★ Applied (DRM-Free)</span>'
         : '<span style="color: var(--steam-text-secondary);">Original Steam DRM</span>';
     }
+    if (btnToggleGoldberg) {
+      btnToggleGoldberg.disabled = false;
+      btnToggleGoldberg.style.opacity = "1";
+      btnToggleGoldberg.style.cursor = "pointer";
+    }
+    if (goldbergNoteEl) goldbergNoteEl.style.display = "none";
   } else {
     if (pathEl) pathEl.textContent = "Not installed on NAS";
     if (sizeEl) sizeEl.textContent = "--";
     if (goldbergStatusEl) goldbergStatusEl.textContent = "Not installed on NAS";
+    if (btnToggleGoldberg) {
+      btnToggleGoldberg.disabled = true;
+      btnToggleGoldberg.style.opacity = "0.5";
+      btnToggleGoldberg.style.cursor = "not-allowed";
+    }
+    if (goldbergNoteEl) {
+      goldbergNoteEl.textContent = "Game files are not installed on the NAS. Please download this title first before applying the Goldberg offline emulator.";
+      goldbergNoteEl.style.display = "block";
+    }
   }
 
   switchPropSubtab("general");
@@ -938,13 +976,25 @@ async function checkGoldbergStatusForHero(appid) {
 async function toggleGoldbergForGame(appid) {
   if (!appid) return;
   valveSound.playSelect();
+
+  const installed = state.installedGames.find((ig) => ig.appid === appid);
+  if (!installed) {
+    showToast("Game is not installed on NAS. Download it first to apply Goldberg wrapper.", "warning");
+    return;
+  }
+
   try {
     const statusRes = await fetch(`/api/games/${appid}/goldberg`);
+    if (!statusRes.ok) {
+      const err = await statusRes.json().catch(() => ({}));
+      showToast(err.detail || "Game files not found on NAS. Please download the game first.", "error");
+      return;
+    }
     const statusData = await statusRes.json();
     const endpoint = statusData.patched ? `/api/games/${appid}/goldberg/revert` : `/api/games/${appid}/goldberg/apply`;
     const res = await fetch(endpoint, { method: "POST" });
-    const result = await res.json();
-    if (result.success) {
+    const result = await res.json().catch(() => ({}));
+    if (res.ok && result.success) {
       valveSound.playSuccess();
       showToast(statusData.patched ? "Restored original Steam DRM DLLs." : "Applied Goldberg DRM-Free wrapper!", "success");
       await checkGoldbergStatusForHero(appid);
@@ -958,7 +1008,7 @@ async function toggleGoldbergForGame(appid) {
         }
       }
     } else {
-      showToast(result.message || "Failed to toggle Goldberg emulator.", "error");
+      showToast(result.detail || result.message || "Failed to toggle Goldberg emulator.", "error");
     }
   } catch (e) {
     showToast("Error toggling Goldberg wrapper.", "error");
@@ -968,18 +1018,23 @@ async function toggleGoldbergForGame(appid) {
 async function applyGoldbergToGame(appid) {
   if (!appid) return;
   valveSound.playSelect();
+  const installed = state.installedGames.find((ig) => ig.appid === appid);
+  if (!installed) {
+    showToast("Game is not installed on NAS. Download it first to apply Goldberg wrapper.", "warning");
+    return;
+  }
   try {
     const res = await fetch(`/api/games/${appid}/goldberg/apply`, { method: "POST" });
-    const result = await res.json();
-    if (result.success) {
+    const result = await res.json().catch(() => ({}));
+    if (res.ok && result.success) {
       valveSound.playSuccess();
       showToast("Goldberg DRM-free wrapper applied!", "success");
       await loadInstalledGames();
       await checkGoldbergStatusForHero(appid);
     } else {
-      showToast(result.message || "Could not apply Goldberg wrapper.", "error");
+      showToast(result.detail || result.message || "Could not apply Goldberg wrapper.", "error");
     }
-  } catch (e) {
+  } catch (err) {
     showToast("Error applying Goldberg.", "error");
   }
 }
@@ -997,14 +1052,6 @@ async function deleteGameFromNasByAppId(appid) {
   }
 }
 
-function toggleBatchMode() {
-  state.batchMode = !state.batchMode;
-  valveSound.playSelect();
-  const toggleBtn = document.getElementById("batchModeToggleBtn");
-  if (toggleBtn) toggleBtn.classList.toggle("active", state.batchMode);
-  renderSidebarGames();
-  updateBatchBarUI();
-}
 
 function clearLibrarySearch() {
   const input = document.getElementById("librarySearchInput");
@@ -1872,7 +1919,10 @@ async function submitCredentialsLogin(e) {
   }
 
   if (statusEl) statusEl.textContent = "Logging into SteamCMD session...";
-  if (submitBtn) submitBtn.disabled = true;
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Connecting...";
+  }
 
   try {
     let res;
@@ -1889,56 +1939,109 @@ async function submitCredentialsLogin(e) {
         body: JSON.stringify({ username: user, password: pass }),
       });
     }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      if (statusEl) statusEl.textContent = err.detail || "Steam login request rejected.";
+      showToast(err.detail || "Server error during login.", "error");
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "SIGN IN";
+      }
+      return;
+    }
+
     const data = await res.json();
-    if (data.authorized || data.state === "success" || data.authenticated) {
+    if (data.connected || (data.state === "success" && data.authorized)) {
       valveSound.playSuccess();
       showToast("Successfully logged into Steam!", "success");
       closeQrLoginModal();
       await checkUserSession();
       await loadGamesLibrary();
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "SIGN IN";
+      }
+      return;
     } else if (data.state === "waiting_code" || data.status === "requires_2fa") {
       const group2fa = document.getElementById("login2faGroup");
       if (group2fa) group2fa.style.display = "block";
       if (statusEl) statusEl.textContent = "Steam Guard code required. Enter code above.";
       showToast("Steam Guard 2FA code required.", "info");
-    } else if (data.state === "waiting_approval") {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Submit Code";
+      }
+    } else {
+      // starting or waiting_approval
       if (statusEl) statusEl.textContent = "Steam Guard prompt sent! Tap 'Approve' on your Steam Mobile app.";
       showToast("Tap 'Approve' on your Steam Mobile app.", "info");
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Waiting for Mobile Approval...";
+      }
     }
 
     // Polling loop for mobile approval / 2FA completion
     let pollCount = 0;
     const pollInterval = setInterval(async () => {
       pollCount++;
-      if (pollCount > 45) {
+      if (pollCount > 60) {
         clearInterval(pollInterval);
-        if (submitBtn) submitBtn.disabled = false;
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "SIGN IN";
+        }
+        if (statusEl) statusEl.textContent = "Timed out waiting for Steam Mobile approval. Tap SIGN IN to retry.";
         return;
       }
       try {
         const statRes = await fetch("/api/auth/steamcmd/status");
+        if (!statRes.ok) return;
         const stat = await statRes.json();
-        if (stat.authorized || stat.state === "success") {
+        if (stat.connected || (stat.state === "success" && stat.authorized)) {
           clearInterval(pollInterval);
           valveSound.playSuccess();
           showToast("Steam device authorized successfully!", "success");
           closeQrLoginModal();
           await checkUserSession();
           await loadGamesLibrary();
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "SIGN IN";
+          }
         } else if (stat.state === "waiting_approval") {
           if (statusEl) statusEl.textContent = "Steam Guard prompt sent! Tap 'Approve' on your Steam Mobile app.";
+          if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = "Waiting for Mobile Approval...";
+          }
         } else if (stat.state === "waiting_code") {
           const group2fa = document.getElementById("login2faGroup");
           if (group2fa) group2fa.style.display = "block";
           if (statusEl) statusEl.textContent = "Enter your Steam Guard 2FA code from Mobile or Email.";
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Submit Code";
+          }
+        } else if (stat.state === "error") {
+          clearInterval(pollInterval);
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "SIGN IN";
+          }
+          if (statusEl) statusEl.textContent = stat.status_message || "Steam login failed.";
+          showToast(stat.status_message || "Steam login failed.", "error");
         }
       } catch (e) {}
     }, 2000);
   } catch (err) {
-    if (statusEl) statusEl.textContent = "Error communicating with server.";
+    if (statusEl) statusEl.textContent = err.message || "Error communicating with server.";
     showToast("Server error during login.", "error");
-  } finally {
-    if (submitBtn) submitBtn.disabled = false;
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "SIGN IN";
+    }
   }
 }
 

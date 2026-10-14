@@ -31,15 +31,28 @@ class SteamCmdAuthManager:
         sentry_files = list(STEAM_HOME_DIR.glob("ssfn*"))
 
         session_stat = steam_session.get_status()
-        is_authorized = steam_session.is_ready() or settings.get("steamcmd_authorized", False) or has_steam_credentials()
+
+        # If a login / authorization attempt is actively running, never return a false-positive success
+        is_actively_authenticating = (
+            self.state in ("starting", "waiting_approval", "waiting_code")
+            or (steam_session.is_alive() and steam_session.state in ("starting", "waiting_approval", "waiting_code"))
+        )
 
         if steam_session.is_ready():
             current_state = "success"
             status_msg = "Device authorized and connected! Future downloads will start without prompts."
-        elif steam_session.is_alive():
-            current_state = session_stat["state"]
-            status_msg = session_stat["status_message"]
+            is_authorized = True
+        elif is_actively_authenticating:
+            # Active login in progress: strictly report live in-progress state and False for authorized
+            current_state = steam_session.state if (steam_session.is_alive() and steam_session.state in ("waiting_approval", "waiting_code")) else self.state
+            status_msg = steam_session.status_message if (steam_session.is_alive() and steam_session.status_message) else self.status_message
+            is_authorized = False
+        elif self.state == "error":
+            current_state = "error"
+            status_msg = self.status_message
+            is_authorized = False
         else:
+            is_authorized = settings.get("steamcmd_authorized", False) or has_steam_credentials()
             current_state = "success" if is_authorized else self.state
             status_msg = self.status_message or ("Machine is authorized." if is_authorized else "Not authorized.")
 
@@ -73,6 +86,7 @@ class SteamCmdAuthManager:
         self.state = "starting"
         self.status_message = "Starting SteamCMD authorization..."
         self.log_lines = []
+        save_settings({"steamcmd_authorized": False, "steamcmd_username": username})
 
         async def _run_auth():
             def _log(line: str):

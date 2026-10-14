@@ -192,6 +192,15 @@ class GoldbergManager:
                     if account_name:
                         (settings_dir / "force_account_name.txt").write_text(account_name, encoding="utf-8")
 
+        if not patched_list:
+            return {
+                "success": False,
+                "message": f"No steam_api.dll or steam_api64.dll found in '{game_path.name}'. This title may not use Steamworks DRM or may be Linux native.",
+                "patched_count": 0,
+                "patched_files": [],
+                "appid": appid
+            }
+
         return {
             "success": True,
             "patched_count": len(patched_list),

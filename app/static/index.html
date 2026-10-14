@@ -639,9 +639,10 @@
               <span class="form-helper">Replaces steam_api.dll / steam_api64.dll with Goldberg Emulator so games run standalone offline.</span>
             </div>
             <div class="form-group" style="margin-top: 18px;">
-              <button type="button" class="btn-steam-action" onclick="toggleGoldbergForGame(state.gamePropertiesTargetAppId)">
+              <button type="button" id="propBtnToggleGoldberg" class="btn-steam-action" onclick="toggleGoldbergForGame(state.gamePropertiesTargetAppId)">
                 Toggle Goldberg Offline Wrapper
               </button>
+              <div id="propGoldbergHelpNote" class="form-helper" style="margin-top: 8px; display: none; color: var(--steam-gold);"></div>
             </div>
           </div>
 

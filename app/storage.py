@@ -103,6 +103,8 @@ class StorageManager:
                 # 1. Search for appmanifest_*.acf
                 manifests = list(item.glob("appmanifest_*.acf"))
                 if not manifests:
+                    manifests = list(item.glob("steamapps/appmanifest_*.acf"))
+                if not manifests:
                     manifests = list((DOWNLOAD_DIR / "steamapps").glob(f"appmanifest_*.acf")) if (DOWNLOAD_DIR / "steamapps").exists() else []
 
                 if manifests:
